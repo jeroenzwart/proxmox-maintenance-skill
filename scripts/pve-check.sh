@@ -12,7 +12,7 @@
 # not quorate" when the cluster is perfectly fine.
 #
 # Usage: pve-check.sh [--full] [--cluster] [--section NAME]
-#   --full          also read SMART data and recent journal errors (slower)
+#   --full          also read recent journal errors (slower)
 #   --cluster       repeat the core checks on the other cluster nodes via SSH
 #   --section NAME  run only one section: identity cluster storage guests
 #                   backup services packages certs network logs smart
@@ -33,6 +33,13 @@ while [ $# -gt 0 ]; do
   esac
   shift
 done
+
+# A mistyped section would run nothing and then report "no warnings raised",
+# which reads as a clean bill of health.
+case "$ONLY" in
+  ""|identity|cluster|storage|guests|backup|services|packages|certs|network|logs|smart) ;;
+  *) echo "unknown section: $ONLY" >&2; exit 2 ;;
+esac
 
 WARN_COUNT=0
 NODE="$(hostname)"
@@ -84,7 +91,12 @@ if sec identity; then
     if [ "$pinned" = "$running_kernel" ]; then
       note "the running kernel is pinned deliberately - newer kernels stay installed but unused until 'proxmox-boot-tool kernel unpin'. Do not treat this as a missed reboot."
       [ -n "$newest" ] && [ "${running_kernel%-pve}" != "$newest" ] && note "a newer kernel ($newest) is available once the pin is lifted"
-      warn "a pinned kernel can be removed by 'apt autoremove' if it stops being a dependency - verify it is still installed before and after any autoremove, or the host boots into something untested"
+      # proxmox-kernel-helper shields the pinned kernel from autoremove through
+      # APT::NeverAutoRemove, but only once a refresh has rewritten that list.
+      apt_keep=/etc/apt/apt.conf.d/76pveconf
+      if [ -f "$apt_keep" ] && ! tr -d '\\' < "$apt_keep" | grep -qF "${pinned%-pve}"; then
+        warn "pinned kernel $pinned is missing from APT::NeverAutoRemove in $apt_keep - 'apt autoremove' may remove it; run 'proxmox-boot-tool refresh'"
+      fi
     else
       warn "kernel $pinned is pinned but $running_kernel is running - the pin did not take effect; check proxmox-boot-tool refresh"
     fi
@@ -107,25 +119,28 @@ if sec cluster; then
     votes="$(echo "$st" | awk -F': *' '/Expected votes/{print $2; exit}' | tr -d ' \r')"
     has_qdev=0
     grep -qE 'quorum_device|device \{' /etc/pve/corosync.conf 2>/dev/null && has_qdev=1
+    # The membership block of `pvecm status` lists ring addresses, which are
+    # IPs whenever corosync was configured that way, so it cannot be compared
+    # against directory names. corosync.conf always carries the node names.
+    members="$(awk -F': *' '/^[[:space:]]*name:/{print $2}' /etc/pve/corosync.conf 2>/dev/null | tr -d ' \r')"
+    [ -z "$members" ] && members="$(timeout 20 pvecm nodes 2>/dev/null | awk 'NR>3 && $3!="Name"{print $3}' | tr -d ' ')"
+    # "Nodes:" in pvecm status counts only the members online right now, so it
+    # cannot tell a two-node cluster from a three-node one with a node down.
+    member_count="$(echo "$members" | grep -c .)"
 
     if [ -z "$quorate" ]; then
       warn "could not read quorum state from pvecm (is corosync running?)"
     elif [ "$quorate" != "Yes" ]; then
       warn "cluster is NOT quorate - /etc/pve stays read-only until quorum returns"
     else
-      note "quorate: yes (${nodes_n:-?} nodes, expected votes ${votes:-?})"
+      note "quorate: yes (${nodes_n:-?} of $member_count nodes online, expected votes ${votes:-?})"
     fi
-    if [ "${nodes_n:-0}" = "2" ] && [ "$has_qdev" = "0" ]; then
+    if [ "$member_count" = "2" ] && [ "$has_qdev" = "0" ]; then
       warn "2-node cluster without a QDevice: with expected votes ${votes:-2}, taking ONE node down leaves the survivor without quorum and /etc/pve read-only. Reboot/upgrade one node at a time and bring it fully back before touching the other, or add a QDevice as a third vote."
     fi
 
     echo
     echo "  -- node directories vs cluster members --"
-    # The membership block of `pvecm status` lists ring addresses, which are
-    # IPs whenever corosync was configured that way, so it cannot be compared
-    # against directory names. corosync.conf always carries the node names.
-    members="$(awk -F': *' '/^[[:space:]]*name:/{print $2}' /etc/pve/corosync.conf 2>/dev/null | tr -d ' \r')"
-    [ -z "$members" ] && members="$(timeout 20 pvecm nodes 2>/dev/null | awk 'NR>3 && $3!="Name"{print $3}' | tr -d ' ')"
     echo "  members per corosync.conf: $(echo "$members" | tr '\n' ' ')"
     for d in /etc/pve/nodes/*/; do
       n="$(basename "$d")"
@@ -151,8 +166,9 @@ if sec storage; then
   ps_out="$(pvesm_status)"
   echo "$ps_out" | sed 's/^/  /'
   echo
-  echo "$ps_out" | awk 'NR>1 && $3!="active"{print "  !! storage "$1" ("$2") is "$3}'
-  inactive="$(echo "$ps_out" | awk 'NR>1 && $3!="active"' | wc -l)"
+  # A disabled storage was taken out of use on purpose, so it is not a fault.
+  echo "$ps_out" | awk 'NR>1 && $3!="active" && $3!="disabled"{print "  !! storage "$1" ("$2") is "$3}'
+  inactive="$(echo "$ps_out" | awk 'NR>1 && $3!="active" && $3!="disabled"' | wc -l)"
   [ "$inactive" -gt 0 ] && WARN_COUNT=$((WARN_COUNT + inactive))
   while read -r line; do
     [ -n "$line" ] && warn "$line"
@@ -174,10 +190,17 @@ if sec storage; then
     # ZFS does not fill vdevs evenly, so a comfortable pool-level percentage can
     # hide a vdev that is nearly full - which slows writes and lengthens any
     # resilver exactly when that matters most.
-    while read -r v cap; do
-      [ -z "$v" ] && continue
-      warn "vdev $v is ${cap} full while its pool reports a lower figure - ZFS spreads writes unevenly, and a nearly-full vdev fragments and slows resilvering"
-    done < <(zpool list -v 2>/dev/null | awk '/^  [a-z]/ {gsub(/%/,"",$8); if ($8+0 > 85) print $1" "$8"%"}')
+    # Vdev CAP has a decimal while pool CAP is whole, so a single-vdev pool
+    # needs the +1 margin to not report its only vdev as fuller than the pool.
+    while read -r kind name cap pool_cap; do
+      case "$kind" in
+        pool) warn "pool $name is ${cap}% full - ZFS slows down sharply above ~80% and refuses writes near 100%" ;;
+        vdev) warn "vdev $name is ${cap}% full while its pool reports ${pool_cap}% - ZFS spreads writes unevenly, and a nearly-full vdev fragments and slows resilvering" ;;
+      esac
+    done < <(zpool list -v 2>/dev/null | awk '
+      NR == 1 { next }
+      /^[^ \t]/ { if ($8 ~ /%$/) { pool_cap = $8 + 0; if (pool_cap > 85) print "pool", $1, pool_cap }; next }
+      /^  [a-z]/ { cap = $8; gsub(/%/, "", cap); if (cap + 0 > 85 && cap + 0 > pool_cap + 1) print "vdev", $1, cap + 0, pool_cap }')
     unhealthy="$(timeout 30 zpool status -x 2>/dev/null)"
     echo "  $unhealthy"
     echo "$unhealthy" | grep -qi 'all pools are healthy' || warn "zpool status -x reports a problem - run 'zpool status -v' for the detail"
@@ -191,13 +214,36 @@ if sec storage; then
         # "there is a warning" and "one more failure and everything is gone".
         bad="$(echo "$pstat" | awk '/(FAULTED|DEGRADED|UNAVAIL|OFFLINE|REMOVED)/ && $1 !~ /^(state|status|action)/ {print $1"("$2")"}' | tr '\n' ' ')"
         warn "pool $p is $phealth - affected: $bad"
-        layout="$(echo "$pstat" | grep -oE 'raidz[123]|mirror' | head -1)"
-        case "$layout" in
-          raidz1|mirror)
-            warn "the affected vdev is $layout (single-parity): with one device already down it has NO redundancy left, and a second failure in that same vdev destroys the ENTIRE pool including its healthy vdevs. Replace the device; clearing the error only hides it." ;;
-          raidz2|raidz3)
-            warn "the affected vdev is $layout, so some parity remains - still replace promptly, redundancy is reduced." ;;
-        esac
+        # Per unhealthy vdev: its name, its direct members, and how many of
+        # those are not ONLINE. Only direct members count, so a nested
+        # replacing-N or spare-N group counts as one device.
+        while read -r vdev members down; do
+          [ -z "$vdev" ] && continue
+          case "$vdev" in
+            mirror*) left=$((members - 1 - down)) ;;
+            raidz1*|draid1*) left=$((1 - down)) ;;
+            raidz2*|draid2*) left=$((2 - down)) ;;
+            raidz3*|draid3*) left=$((3 - down)) ;;
+            *) continue ;;
+          esac
+          if [ "$left" -le 0 ]; then
+            warn "vdev $vdev has $down of $members devices down and NO redundancy left: one more failure in it destroys the ENTIRE pool including its healthy vdevs. Replace the device; clearing the error only hides it."
+          else
+            warn "vdev $vdev has $down of $members devices down and can lose $left more before data is lost - replace promptly, redundancy is reduced."
+          fi
+        done < <(echo "$pstat" | awk '
+          function emit() { if (vdev_state != "ONLINE") print vdev, members, down }
+          $1 == "NAME" && $2 == "STATE" { in_config = 1; next }
+          /^errors:/ { in_config = 0 }
+          in_config && NF >= 2 {
+            match($0, /^[\t ]*/); indent = RLENGTH
+            if (vdev != "" && indent <= vdev_indent) { emit(); vdev = "" }
+            if ($1 ~ /^(mirror|raidz|draid)/) { vdev = $1; vdev_indent = indent; vdev_state = $2; member_indent = 0; members = 0; down = 0; next }
+            if (vdev == "") { next }
+            if (member_indent == 0) { member_indent = indent }
+            if (indent == member_indent) { members++; if ($2 != "ONLINE") { down++ } }
+          }
+          END { if (vdev != "") { emit() } }')
       fi
       scan="$(echo "$pstat" | grep -E '^\s+scan:' | sed 's/^\s*//')"
       echo "  $p: ${scan:-scan state unknown}"
@@ -263,12 +309,13 @@ if sec backup; then
     n_b="$(echo "$binds" | grep -c .)"
     echo "$binds" | sed 's/^/    /'
     total=""
-    have du >/dev/null 2>&1
-    for b in $(echo "$binds" | awk -F/ '{print "/"$2}' | sort -u); do
+    # df on the full path: its first component (/mnt, /tank) is usually a
+    # different filesystem or the parent dataset, not the one that is mounted.
+    while read -r b; do
       [ -d "$b" ] || continue
       sz="$(df -h --output=used "$b" 2>/dev/null | tail -1 | tr -d ' ')"
       [ -n "$sz" ] && total="$total $b=$sz"
-    done
+    done <<< "$binds"
     warn "$n_b distinct bind mount source path(s) are mounted into containers; vzdump/PBS does NOT back up their contents.${total:+ Filesystem usage:$total} Verify these are protected some other way (zfs send, a separate backup client, or a replica) - a nightly job reporting OK covers only the guests themselves."
   else
     note "no bind mounts configured; guest data lives on storage-backed volumes only"
@@ -303,7 +350,8 @@ if sec packages; then
   echo "  -- broken packages --"
   broken="$(dpkg -C 2>/dev/null)"
   if [ -n "$broken" ]; then echo "$broken" | sed 's/^/  /'; warn "dpkg reports packages in a broken state"; else note "dpkg -C: clean"; fi
-  half="$(dpkg -l 2>/dev/null | awk 'NR>5 && $1!="ii" && $1!="rc" {print "  "$1" "$2}' | head -10)"
+  # "hi" is installed and on hold - deliberate, not broken.
+  half="$(dpkg -l 2>/dev/null | awk 'NR>5 && $1 !~ /^[ih]i$/ && $1!="rc" {print "  "$1" "$2}' | head -10)"
   if [ -n "$half" ]; then
     echo "$half"
     warn "package(s) not fully installed (state is not 'ii') - fix with 'apt --fix-broken install' before any other upgrade"
@@ -322,8 +370,12 @@ if sec packages; then
     if grep -qi '^Enabled: *no' "$f" 2>/dev/null; then note "$(basename "$f"): present but disabled"; continue; fi
     echo "  [$(basename "$f")]"
     echo "$active" | sed 's/^/    /'
-    if [ -n "$suite" ] && echo "$active" | grep -qE '(^|[ /])(bullseye|bookworm|buster)([ /]|$)'; then
-      warn "$f still points at an older Debian suite while this host runs $suite - a leftover from an earlier major upgrade; it can pull in wrong-version packages"
+    # Any known codename other than the running one is a leftover; a fixed list
+    # of "old" names would flag the current suite on older majors.
+    other="$(echo "$active" | tr ' /' '\n\n' | sed -E 's/-(updates|security|backports)$//' \
+      | grep -xE 'buster|bullseye|bookworm|trixie|forky' | grep -vx "$suite" | sort -u | tr '\n' ' ')"
+    if [ -n "$suite" ] && [ -n "$other" ]; then
+      warn "$f points at suite ${other% } while this host runs $suite - a leftover from an earlier major upgrade; it can pull in wrong-version packages"
     fi
     echo "$active" | grep -q 'enterprise.proxmox.com' && note "$(basename "$f") uses the enterprise repo (needs a subscription; without one 'apt update' fails with 401)"
   done
@@ -398,67 +450,65 @@ fi
 # the disks are the thing whose failure is least recoverable. Holding it behind
 # a flag meant the wear and temperature problems on this host went unmentioned
 # in the very reports that were meant to surface them.
-if true; then
-  if sec smart; then
-    if have smartctl; then
-      # zd* are ZFS zvols (guest disks), not physical media - asking them for
-      # SMART data is meaningless, so they are skipped rather than reported
-      # as unreadable.
-      for d in $(lsblk -dn -o NAME,TYPE 2>/dev/null | awk '$2=="disk" && $1 !~ /^zd/{print $1}'); do
-        info="$(timeout 30 smartctl -HiA "/dev/$d" 2>/dev/null)"
-        health="$(echo "$info" | grep -iE 'overall-health|SMART Health' | sed 's/^.*: *//' | tr -d ' \r')"
-        model="$(echo "$info" | awk -F': *' '/Device Model|Model Number/{print $2; exit}')"
-        hours="$(echo "$info" | awk '/Power_On_Hours|Power On Hours/{gsub(/,/,"",$NF); print $NF; exit}')"
-        used="$(echo "$info" | awk -F': *' '/Percentage Used/{gsub(/[^0-9]/,"",$2); print $2; exit}')"
-        realloc="$(echo "$info" | awk '/Reallocated_Sector_Ct/{print $NF; exit}')"
-        pending="$(echo "$info" | awk '/Current_Pending_Sector/{print $NF; exit}')"
-        # SATA reports temperature as attribute 194, NVMe as a "Temperature:"
-        # line. Heat is the single biggest accelerator of drive failure, and it
-        # is invisible in every other check here, so it is worth both forms.
-        temp="$(echo "$info" | awk '/Temperature_Celsius|Airflow_Temperature/{print $10; exit}')"
-        [ -z "$temp" ] && temp="$(echo "$info" | awk -F': *' '/^Temperature:/{gsub(/[^0-9]/,"",$2); print $2; exit}')"
-        # Vendors append "(Min/Max 21/67)" in wildly varying shapes, so pick the
-        # max out explicitly rather than trusting the last field.
-        tmax="$(echo "$info" | grep -m1 -oE 'Min/Max +[0-9]+/[0-9]+' | grep -oE '[0-9]+$')"
-        wearsata="$(echo "$info" | awk '/Media_Wearout_Indicator|Wear_Leveling_Count|SSD_Life_Left/{print $2"(val "$4")"; exit}')"
+if sec smart; then
+  if have smartctl; then
+    # zd* are ZFS zvols (guest disks), not physical media - asking them for
+    # SMART data is meaningless, so they are skipped rather than reported
+    # as unreadable.
+    for d in $(lsblk -dn -o NAME,TYPE 2>/dev/null | awk '$2=="disk" && $1 !~ /^zd/{print $1}'); do
+      info="$(timeout 30 smartctl -HiA "/dev/$d" 2>/dev/null)"
+      health="$(echo "$info" | grep -iE 'overall-health|SMART Health' | sed 's/^.*: *//' | tr -d ' \r')"
+      model="$(echo "$info" | awk -F': *' '/Device Model|Model Number/{print $2; exit}')"
+      hours="$(echo "$info" | awk '/Power_On_Hours|Power On Hours/{gsub(/,/,"",$NF); print $NF; exit}')"
+      used="$(echo "$info" | awk -F': *' '/Percentage Used/{gsub(/[^0-9]/,"",$2); print $2; exit}')"
+      realloc="$(echo "$info" | awk '/Reallocated_Sector_Ct/{print $NF; exit}')"
+      pending="$(echo "$info" | awk '/Current_Pending_Sector/{print $NF; exit}')"
+      # SATA reports temperature as attribute 194, NVMe as a "Temperature:"
+      # line. Heat is the single biggest accelerator of drive failure, and it
+      # is invisible in every other check here, so it is worth both forms.
+      temp="$(echo "$info" | awk '/Temperature_Celsius|Airflow_Temperature/{print $10; exit}')"
+      [ -z "$temp" ] && temp="$(echo "$info" | awk -F': *' '/^Temperature:/{gsub(/[^0-9]/,"",$2); print $2; exit}')"
+      # Vendors append "(Min/Max 21/67)" in wildly varying shapes, so pick the
+      # max out explicitly rather than trusting the last field.
+      tmax="$(echo "$info" | grep -m1 -oE 'Min/Max +[0-9]+/[0-9]+' | grep -oE '[0-9]+$')"
+      wearsata="$(echo "$info" | awk '/Media_Wearout_Indicator|Wear_Leveling_Count|SSD_Life_Left/{print $2"(val "$4")"; exit}')"
 
-        # No health line at all means SMART could not be read (USB bridge, RAID
-        # HBA, virtual device). That is a gap in visibility, not a failing
-        # disk, so it is reported as a note rather than raised as an alarm.
-        if [ -z "$health" ]; then
-          note "$d (${model:-unknown model}): SMART not readable - controller may not pass it through (try: smartctl -d sat -a /dev/$d)"
-          continue
-        fi
-        printf '  %-8s %-26s health=%-8s hours=%-8s%s%s%s%s\n' \
-          "$d" "${model:-?}" "${health:-?}" "${hours:-?}" \
-          "${temp:+ temp=${temp}C}" "${used:+ used=${used}%}" \
-          "${realloc:+ realloc=$realloc}" "${pending:+ pending=$pending}"
+      # No health line at all means SMART could not be read (USB bridge, RAID
+      # HBA, virtual device). That is a gap in visibility, not a failing
+      # disk, so it is reported as a note rather than raised as an alarm.
+      if [ -z "$health" ]; then
+        note "$d (${model:-unknown model}): SMART not readable - controller may not pass it through (try: smartctl -d sat -a /dev/$d)"
+        continue
+      fi
+      printf '  %-8s %-26s health=%-8s hours=%-8s%s%s%s%s\n' \
+        "$d" "${model:-?}" "${health:-?}" "${hours:-?}" \
+        "${temp:+ temp=${temp}C}" "${used:+ used=${used}%}" \
+        "${realloc:+ realloc=$realloc}" "${pending:+ pending=$pending}"
 
-        # Spinning disks are specified to roughly 55-60 C; sustained operation
-        # above that measurably shortens their life, and a resilver or scrub
-        # pushes every disk at once for days.
-        if [ -n "$temp" ] && [ "$temp" -ge 55 ] 2>/dev/null; then
-          if [ "$temp" -ge 60 ]; then
-            warn "disk /dev/$d runs at ${temp}C${tmax:+ (lifetime max ${tmax}C)} - above the ~55-60C the manufacturer specifies. Heat is the strongest predictor of drive failure, and a resilver keeps every disk at full load for days. Improve airflow before starting one."
-          else
-            note "$d is warm at ${temp}C - watch it; sustained operation above ~55C shortens disk life"
-          fi
+      # Spinning disks are specified to roughly 55-60 C; sustained operation
+      # above that measurably shortens their life, and a resilver or scrub
+      # pushes every disk at once for days.
+      if [ -n "$temp" ] && [ "$temp" -ge 55 ] 2>/dev/null; then
+        if [ "$temp" -ge 60 ]; then
+          warn "disk /dev/$d runs at ${temp}C${tmax:+ (lifetime max ${tmax}C)} - above the ~55-60C the manufacturer specifies. Heat is the strongest predictor of drive failure, and a resilver keeps every disk at full load for days. Improve airflow before starting one."
+        else
+          note "$d is warm at ${temp}C - watch it; sustained operation above ~55C shortens disk life"
         fi
+      fi
 
-        echo "$health" | grep -qiE 'passed|ok' || warn "disk /dev/$d (${model:-unknown}) SMART self-assessment is '$health'"
-        # "Percentage Used" counts down the manufacturer's rated endurance. At
-        # 100% the drive is past its write-endurance budget even though SMART
-        # still says PASSED, so it deserves a warning of its own.
-        if [ -n "$used" ] && [ "$used" -ge 80 ] 2>/dev/null; then
-          warn "SSD /dev/$d (${model:-unknown}) has used ${used}% of its rated write endurance - plan replacement; at 100% the manufacturer no longer guarantees data retention even while SMART reports PASSED"
-        fi
-        [ -n "$realloc" ] && [ "$realloc" -gt 0 ] 2>/dev/null && warn "disk /dev/$d has $realloc reallocated sector(s) - failing media"
-        [ -n "$pending" ] && [ "$pending" -gt 0 ] 2>/dev/null && warn "disk /dev/$d has $pending sector(s) pending reallocation - unreadable data, check the pool it belongs to"
-        [ -n "$wearsata" ] && note "$d wear indicator: $wearsata"
-      done
-    else
-      note "smartctl not installed (package: smartmontools)"
-    fi
+      echo "$health" | grep -qiE 'passed|ok' || warn "disk /dev/$d (${model:-unknown}) SMART self-assessment is '$health'"
+      # "Percentage Used" counts down the manufacturer's rated endurance. At
+      # 100% the drive is past its write-endurance budget even though SMART
+      # still says PASSED, so it deserves a warning of its own.
+      if [ -n "$used" ] && [ "$used" -ge 80 ] 2>/dev/null; then
+        warn "SSD /dev/$d (${model:-unknown}) has used ${used}% of its rated write endurance - plan replacement; at 100% the manufacturer no longer guarantees data retention even while SMART reports PASSED"
+      fi
+      [ -n "$realloc" ] && [ "$realloc" -gt 0 ] 2>/dev/null && warn "disk /dev/$d has $realloc reallocated sector(s) - failing media"
+      [ -n "$pending" ] && [ "$pending" -gt 0 ] 2>/dev/null && warn "disk /dev/$d has $pending sector(s) pending reallocation - unreadable data, check the pool it belongs to"
+      [ -n "$wearsata" ] && note "$d wear indicator: $wearsata"
+    done
+  else
+    note "smartctl not installed (package: smartmontools)"
   fi
 fi
 
