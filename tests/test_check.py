@@ -1,5 +1,6 @@
 import os
 import subprocess
+import tempfile
 import unittest
 from pathlib import Path
 
@@ -7,10 +8,11 @@ ROOT = Path(__file__).resolve().parent.parent
 STUBS = ROOT / "tests" / "stubs"
 
 
-def run_check(installed, *args):
+def run_check(installed, *args, log=""):
     env = dict(os.environ)
     env["PATH"] = f"{STUBS}:{env['PATH']}"
     env["STUB_INSTALLED"] = installed
+    env["STUB_LOG"] = log
 
     return subprocess.run(
         ["bash", str(ROOT / "scripts" / "check.sh"), *args],
@@ -51,6 +53,17 @@ class SectionValidationTest(unittest.TestCase):
 
         self.assertEqual(result.returncode, 2)
         self.assertIn("not installed", result.stderr)
+
+
+class PdmRemotesTest(unittest.TestCase):
+    def test_pdm_remote_timeout(self):
+        with tempfile.NamedTemporaryFile("r") as log:
+            run_check("proxmox-datacenter-manager", "--section", "remotes", log=log.name)
+            calls = [line.split() for line in log.read().splitlines()]
+
+        remote_calls = [call for call in calls if call[1:4] == ["proxmox-datacenter-manager-admin", "remote", "version"]]
+        self.assertTrue(remote_calls, calls)
+        self.assertEqual(remote_calls[0][0], "15")
 
 
 if __name__ == "__main__":

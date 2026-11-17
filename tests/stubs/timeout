@@ -1,0 +1,5 @@
+#!/usr/bin/env bash
+# Test stub: records the timeout arguments, then runs the command unbounded.
+[ -n "${STUB_LOG:-}" ] && echo "$*" >> "$STUB_LOG"
+shift
+exec "$@"
