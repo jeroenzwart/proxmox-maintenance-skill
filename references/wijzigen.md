@@ -13,6 +13,16 @@ qm config <id> > /root/backup-<id>-$(date +%F).conf      # cheap insurance
 cp /etc/network/interfaces /root/interfaces.$(date +%F)  # before network edits
 ```
 
+## Contents
+
+- [Guests](#guests)
+- [Storage](#storage)
+- [Network](#network)
+- [Backup jobs](#backup-jobs)
+- [Users and permissions](#users-and-permissions)
+- [Operations that deserve extra care](#operations-that-deserve-extra-care)
+- [Verifying afterwards](#verifying-afterwards)
+
 ## Guests
 
 ```bash
@@ -51,7 +61,7 @@ Notes that matter in practice:
   it quietly consumes the old storage forever.
 - **Unprivileged containers map UIDs**, so files created inside land as high UIDs
   on the host. Bind-mount permission problems nearly always come from this;
-  `pve-docs.py search unprivileged container bind mount` has the mapping rules.
+  `python3 <skill-dir>/scripts/pve-docs.py search unprivileged container bind mount` has the mapping rules.
   The default offset is 100000 (`/etc/subuid`), so a host directory owned by
   `100501:100401` appears inside the container as uid 501, gid 401. Read the
   host ownership first and match it, rather than loosening permissions until it
@@ -181,7 +191,7 @@ Say what you checked, not just what you ran:
 qm config <id> | grep <the changed key>
 pvesm status
 systemctl is-active <service>
-bash <skill>/scripts/pve-check.sh --section <area>
+bash <skill-dir>/scripts/pve-check.sh --section <area>
 ```
 
 If a change did not have the intended effect, say so and stop rather than

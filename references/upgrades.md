@@ -1,5 +1,14 @@
 # Updates, kernels and version upgrades
 
+## Contents
+
+- [How the repositories fit together](#how-the-repositories-fit-together)
+- [Routine updates](#routine-updates)
+- [Kernels and reboots](#kernels-and-reboots)
+- [Rebooting a node in a cluster](#rebooting-a-node-in-a-cluster)
+- [Major version upgrades](#major-version-upgrades)
+- [When an update breaks something](#when-an-update-breaks-something)
+
 ## How the repositories fit together
 
 A PVE host draws from three families of repository: Debian's own (base OS and
@@ -147,7 +156,7 @@ The sequence, in order:
    permanent state.
 7. Reboot, then check quorum, guests, storage and the web UI before moving on.
 
-After any version change, run `pve-docs.py status`. It will report that the
+After any version change, run `python3 <skill-dir>/scripts/pve-docs.py status`. It will report that the
 online notes for the new version are missing - fetch the release notes and known
 issues and cache them, so later sessions know what changed on this host.
 

@@ -63,7 +63,7 @@ Causes, roughly in order of how often they turn out to be the real one:
 - **A config that references a node that no longer exists**, typically a leftover
   under `/etc/pve/nodes/<stale>/`.
 
-Docs: `pve-docs.py search qm start troubleshooting`, `... pct configuration`.
+Docs: `python3 <skill-dir>/scripts/pve-docs.py search qm start troubleshooting`, `python3 <skill-dir>/scripts/pve-docs.py search pct configuration`.
 
 ## Storage is inactive, full, or gone
 
@@ -107,7 +107,7 @@ self-assessment does not.
 
 - **DEGRADED**: a device dropped out. Identify it by its `/dev/disk/by-id/` name
   (which is stable, unlike `/dev/sdX`), then follow the replacement procedure in
-  the docs: `pve-docs.py search zfs replace failed device`.
+  the docs: `python3 <skill-dir>/scripts/pve-docs.py search zfs replace failed device`.
 - **Errors but ONLINE**: run a scrub to find out how far the damage goes
   (`zpool scrub <pool>`), and check cabling and the controller before blaming the
   disk - especially when several disks report errors at once.
@@ -177,7 +177,7 @@ pvesm status                       # is the target storage active
   an expired or changed API token, a datastore that is full, or a prune/GC job
   that never runs so the datastore fills up over time.
 - **`vzdump` snapshot mode failing** on a guest whose storage does not support
-  snapshots - the mode fell back or errored; `pve-docs.py search backup modes`
+  snapshots - the mode fell back or errored; `python3 <skill-dir>/scripts/pve-docs.py search backup modes`
   explains the guarantees of each mode.
 - **A backup that hangs** usually means a guest that will not quiesce (qemu-guest-agent
   missing or unresponsive) or a slow target; the task log shows where it stopped.

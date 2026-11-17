@@ -13,9 +13,12 @@ then act only with a go-ahead.**
 ## Installing
 
 ```bash
-git clone git@github.com:<you>/proxmox-maintenance-skill.git \
+git clone https://github.com/jeroenzwart/proxmox-maintenance-skill.git \
   ~/.claude/skills/proxmox-maintenance
 ```
+
+Update with `git -C ~/.claude/skills/proxmox-maintenance pull`, then start a new
+Claude Code session.
 
 Run it on the Proxmox host itself (or wherever your Claude Code session has
 access to it). No dependencies beyond what a PVE host already ships: Python 3,

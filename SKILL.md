@@ -15,6 +15,7 @@ description: >-
   than to it - configuring an app in a container (PHP settings, config files,
   packages) is ordinary Linux work - nor for storage on separate appliances such
   as a Synology or TrueNAS.
+allowed-tools: Bash(bash ${CLAUDE_SKILL_DIR}/scripts/pve-check.sh*) Bash(python3 ${CLAUDE_SKILL_DIR}/scripts/pve-docs.py status*) Bash(python3 ${CLAUDE_SKILL_DIR}/scripts/pve-docs.py search*) Bash(python3 ${CLAUDE_SKILL_DIR}/scripts/pve-docs.py show*)
 ---
 
 # Proxmox VE maintenance
@@ -28,17 +29,19 @@ manual for this exact version, propose, then act only with a go-ahead.**
 Answer the user in their own language; keep command names, log lines and config
 keys in their original form.
 
-All paths below are relative to this skill's own directory.
+This skill lives in `${CLAUDE_SKILL_DIR}`, so its paths resolve wherever it is
+installed. The reference files write that directory as `<skill-dir>`; fill in
+`${CLAUDE_SKILL_DIR}` when running their commands.
 
 ## 1. Orient before anything else
 
 Never diagnose from assumptions about how the host is set up - ask the machine.
 
 ```bash
-bash scripts/pve-check.sh            # ~30s, read-only, node-wide
-bash scripts/pve-check.sh --full     # + the last 24h of journal errors
-bash scripts/pve-check.sh --cluster  # + the other nodes over SSH
-bash scripts/pve-check.sh --section storage   # one area only
+bash ${CLAUDE_SKILL_DIR}/scripts/pve-check.sh            # ~30s, read-only, node-wide
+bash ${CLAUDE_SKILL_DIR}/scripts/pve-check.sh --full     # + the last 24h of journal errors
+bash ${CLAUDE_SKILL_DIR}/scripts/pve-check.sh --cluster  # + the other nodes over SSH
+bash ${CLAUDE_SKILL_DIR}/scripts/pve-check.sh --section storage   # one area only
 ```
 
 It prints sections (identity, cluster, storage, guests, backup, services,
@@ -81,9 +84,9 @@ authoritative manual for this machine - more trustworthy than memory, which
 ages badly across Proxmox releases.
 
 ```bash
-python3 scripts/pve-docs.py status              # version + index state
-python3 scripts/pve-docs.py search zfs replace failed disk -n 5
-python3 scripts/pve-docs.py show 'chapter-sysadmin#sysadmin_zfs_change_failed_dev'
+python3 ${CLAUDE_SKILL_DIR}/scripts/pve-docs.py status              # version + index state
+python3 ${CLAUDE_SKILL_DIR}/scripts/pve-docs.py search zfs replace failed disk -n 5
+python3 ${CLAUDE_SKILL_DIR}/scripts/pve-docs.py show 'chapter-sysadmin#sysadmin_zfs_change_failed_dev'
 ```
 
 `search` rebuilds its index automatically when the PVE or pve-docs version has
@@ -175,21 +178,23 @@ assuming. Two facts change how you plan almost every job:
   visible and confuses migrations. Check membership against `corosync.conf`
   before concluding a node is real.
 
-For migrations, HA, and node removal, read `references/wijzigen.md`; removing a
-node in particular is one of the few genuinely unrecoverable operations in PVE.
+For migrations, HA, and node removal, read
+`${CLAUDE_SKILL_DIR}/references/wijzigen.md`; removing a node in particular is
+one of the few genuinely unrecoverable operations in PVE.
 
 ## 5. Deeper references
 
 Load these when the task calls for them - they are detail, not preamble:
 
-- `references/diagnose.md` - symptom-to-cause routes per subsystem: guests that
-  will not start, storage, ZFS, cluster/corosync, network, backups, web UI,
-  performance. Start here when something is broken.
-- `references/wijzigen.md` - recipes for common changes (guests, storage,
-  network, backup jobs, users) done the reversible way, plus the operations that
-  deserve extra care.
-- `references/upgrades.md` - repository layout, routine updates, kernel handling,
-  reboot planning around quorum, and major version upgrades.
+- `${CLAUDE_SKILL_DIR}/references/diagnose.md` - symptom-to-cause routes per
+  subsystem: guests that will not start, storage, ZFS, cluster/corosync,
+  network, backups, web UI, performance. Start here when something is broken.
+- `${CLAUDE_SKILL_DIR}/references/wijzigen.md` - recipes for common changes
+  (guests, storage, network, backup jobs, users) done the reversible way, plus
+  the operations that deserve extra care.
+- `${CLAUDE_SKILL_DIR}/references/upgrades.md` - repository layout, routine
+  updates, kernel handling, reboot planning around quorum, and major version
+  upgrades.
 
 ## Working style
 
