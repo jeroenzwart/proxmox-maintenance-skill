@@ -127,7 +127,7 @@ boot. A config where an interface is claimed twice - say `eno1` carrying
 `bond-master bond0` while `vmbr0` lists it under `bridge-ports` - keeps working
 indefinitely because only one claim was ever enacted. The reload then enacts the
 other one, and the uplink disappears while you are holding an unrelated change
-in your hand. `pve-check.sh --section network` reports these conflicts; resolve
+in your hand. `check.sh --section network` reports these conflicts; resolve
 them first, and treat the dry run's output as something to actually read rather
 than a formality.
 
@@ -191,7 +191,7 @@ Say what you checked, not just what you ran:
 qm config <id> | grep <the changed key>
 pvesm status
 systemctl is-active <service>
-bash <skill-dir>/scripts/pve-check.sh --section <area>
+bash <skill-dir>/scripts/check.sh --section <area>
 ```
 
 If a change did not have the intended effect, say so and stop rather than

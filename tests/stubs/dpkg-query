@@ -1,0 +1,11 @@
+#!/usr/bin/env bash
+# Test stub: packages listed in $STUB_INSTALLED count as installed.
+package="${!#}"
+case " ${STUB_INSTALLED:-} " in
+  *" $package "*) ;;
+  *) exit 1 ;;
+esac
+case "$*" in
+  *'${Status}'*) printf 'install ok installed' ;;
+  *'${Version}'*) printf '1.0-1' ;;
+esac

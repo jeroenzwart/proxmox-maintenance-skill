@@ -14,7 +14,7 @@ description: >-
   guest rather than to it - configuring an app in a container (PHP settings,
   config files, packages) is ordinary Linux work - nor for storage on separate
   appliances such as a Synology or TrueNAS.
-allowed-tools: Bash(bash ${CLAUDE_SKILL_DIR}/scripts/pve-check.sh*) Bash(python3 ${CLAUDE_SKILL_DIR}/scripts/pve-docs.py status*) Bash(python3 ${CLAUDE_SKILL_DIR}/scripts/pve-docs.py search*) Bash(python3 ${CLAUDE_SKILL_DIR}/scripts/pve-docs.py show*)
+allowed-tools: Bash(bash ${CLAUDE_SKILL_DIR}/scripts/check.sh*) Bash(python3 ${CLAUDE_SKILL_DIR}/scripts/pve-docs.py status*) Bash(python3 ${CLAUDE_SKILL_DIR}/scripts/pve-docs.py search*) Bash(python3 ${CLAUDE_SKILL_DIR}/scripts/pve-docs.py show*)
 ---
 
 # Proxmox VE maintenance
@@ -37,14 +37,15 @@ installed. The reference files write that directory as `<skill-dir>`; fill in
 Never diagnose from assumptions about how the host is set up - ask the machine.
 
 ```bash
-bash ${CLAUDE_SKILL_DIR}/scripts/pve-check.sh            # ~30s, read-only, node-wide
-bash ${CLAUDE_SKILL_DIR}/scripts/pve-check.sh --full     # + the last 24h of journal errors
-bash ${CLAUDE_SKILL_DIR}/scripts/pve-check.sh --cluster  # + the other nodes over SSH
-bash ${CLAUDE_SKILL_DIR}/scripts/pve-check.sh --section storage   # one area only
+bash ${CLAUDE_SKILL_DIR}/scripts/check.sh            # ~30s, read-only, node-wide
+bash ${CLAUDE_SKILL_DIR}/scripts/check.sh --full     # + the last 24h of journal errors
+bash ${CLAUDE_SKILL_DIR}/scripts/check.sh --cluster  # + the other nodes over SSH
+bash ${CLAUDE_SKILL_DIR}/scripts/check.sh --section storage   # one area only
 ```
 
-It prints sections (identity, cluster, storage, guests, backup, services,
-packages, certs, network, smart) and marks problems with `!!`. Everything in it
+It prints host-level sections (identity, services, packages, certs, network,
+zfs, disk, smart) and the sections of each installed product (PVE: cluster,
+storage, guests, backup) and marks problems with `!!`. Everything in it
 only observes; it starts, stops, installs and writes nothing, so it is always
 safe to run first.
 
@@ -164,7 +165,7 @@ concern once, then do what they asked - it is their server.
 
 ## 4. Cluster awareness
 
-Determine the cluster shape from `pve-check.sh --section cluster` rather than
+Determine the cluster shape from `check.sh --section cluster` rather than
 assuming. Two facts change how you plan almost every job:
 
 - **A cluster of two nodes without a QDevice cannot survive one node leaving.**
@@ -178,20 +179,20 @@ assuming. Two facts change how you plan almost every job:
   before concluding a node is real.
 
 For migrations, HA, and node removal, read
-`${CLAUDE_SKILL_DIR}/references/changes.md`; removing a node in particular is
+`${CLAUDE_SKILL_DIR}/references/pve/changes.md`; removing a node in particular is
 one of the few genuinely unrecoverable operations in PVE.
 
 ## 5. Deeper references
 
 Load these when the task calls for them - they are detail, not preamble:
 
-- `${CLAUDE_SKILL_DIR}/references/diagnose.md` - symptom-to-cause routes per
+- `${CLAUDE_SKILL_DIR}/references/pve/diagnose.md` - symptom-to-cause routes per
   subsystem: guests that will not start, storage, ZFS, cluster/corosync,
   network, backups, web UI, performance. Start here when something is broken.
-- `${CLAUDE_SKILL_DIR}/references/changes.md` - recipes for common changes
+- `${CLAUDE_SKILL_DIR}/references/pve/changes.md` - recipes for common changes
   (guests, storage, network, backup jobs, users) done the reversible way, plus
   the operations that deserve extra care.
-- `${CLAUDE_SKILL_DIR}/references/upgrades.md` - repository layout, routine
+- `${CLAUDE_SKILL_DIR}/references/pve/upgrades.md` - repository layout, routine
   updates, kernel handling, reboot planning around quorum, and major version
   upgrades.
 

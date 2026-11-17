@@ -34,11 +34,11 @@ bash, and the `pve-docs` package.
 | Path | Purpose |
 |---|---|
 | `SKILL.md` | The working method, and the four findings worth carrying into any answer |
-| `scripts/pve-check.sh` | Read-only health snapshot: cluster/quorum, ZFS per vdev, SMART with temperature and wear, backup coverage, repositories, certificates, network conflicts. Cluster-wide over SSH with `--cluster` |
+| `scripts/check.sh` | Read-only health snapshot: cluster/quorum, ZFS per vdev, SMART with temperature and wear, backup coverage, repositories, certificates, network conflicts. Cluster-wide over SSH with `--cluster` |
 | `scripts/pve-docs.py` | Search the admin guide for the *running* version, from the copy installed on the host |
-| `references/diagnose.md` | Symptom-to-cause routes per subsystem |
-| `references/changes.md` | Reversible recipes for common changes, and the operations that deserve care |
-| `references/upgrades.md` | Repositories, kernels, reboots around quorum, major upgrades |
+| `references/pve/diagnose.md` | Symptom-to-cause routes per subsystem |
+| `references/pve/changes.md` | Reversible recipes for common changes, and the operations that deserve care |
+| `references/pve/upgrades.md` | Repositories, kernels, reboots around quorum, major upgrades |
 
 ## Two design decisions worth knowing
 
@@ -50,7 +50,7 @@ searchable text and rebuilds the index automatically the moment `pveversion` or
 the docs package changes. Only what is genuinely not local - release notes,
 known issues, upgrade guides - is fetched from the web and cached per version.
 
-**Everything observed is observed read-only.** `pve-check.sh` starts, stops,
+**Everything observed is observed read-only.** `check.sh` starts, stops,
 installs and writes nothing, so it is always safe as a first step. Changes are
 proposed in a fixed shape - what, what it touches, the commands, the way back,
 the remaining risk - and executed only after the user agrees.
