@@ -12,7 +12,7 @@ cat /etc/apt/sources.list
 apt policy                       # what is actually being used, and at what priority
 ```
 
-Two things to check whenever updates behave strangely:
+Three things to check whenever updates behave strangely:
 
 - **Suite names must match the Debian release.** After a major upgrade the old
   repository files often survive - a `bookworm` entry on a `trixie` host will
@@ -35,13 +35,14 @@ source of duplicate-entry warnings.
 ```bash
 apt update
 apt list --upgradable
-apt dist-upgrade                 # NOT `apt upgrade`
+apt full-upgrade                 # NOT `apt upgrade`
 ```
 
-`apt upgrade` refuses to install packages that need new dependencies or removals,
-which is exactly the shape of most PVE updates - it silently leaves the stack
-half-updated. `dist-upgrade` (or `pveupgrade`, a thin wrapper that adds warnings
-about reboots) is the supported path.
+`apt upgrade` never removes a package, so an update that replaces or drops one
+is held back - and PVE updates regularly do - leaving the stack half-updated.
+`apt full-upgrade` (the same as `apt dist-upgrade`; the admin guide uses the
+former) or `pveupgrade`, a thin wrapper that adds a reboot hint, is the
+supported path.
 
 Before upgrading a node that runs guests:
 
@@ -73,14 +74,18 @@ else.
 Old kernels do accumulate and can fill `/boot`. Remove them deliberately, never
 the running one or the last known-good one.
 
-**A pinned kernel and `apt autoremove` are a dangerous pair.** Once an upgrade
-moves the kernel meta-package forward, the pinned older kernel can stop being
-anyone's dependency and gets classed as automatically installed and no longer
-needed. An `autoremove` then deletes the very kernel the bootloader is pinned
-to, and the node does not come back from its next reboot. After upgrading a host
-with a pin, either lift the pin deliberately or mark the pinned kernel manual
-(`apt-mark manual proxmox-kernel-<version>-pve-signed`) - and check the removal
-list of any `autoremove` before confirming it.
+**A pinned kernel is protected from `apt autoremove`** - once the protection
+list is current. proxmox-kernel-helper writes the running kernel, the two
+newest and the pinned one to `APT::NeverAutoRemove` in
+`/etc/apt/apt.conf.d/76pveconf`, and rewrites that list on every kernel install
+and on `proxmox-boot-tool refresh`. `kernel pin` offers to run that refresh; if
+it was skipped, the pinned kernel may not be listed yet:
+
+```bash
+grep -A10 NeverAutoRemove /etc/apt/apt.conf.d/76pveconf
+```
+
+Read the removal list of any `autoremove` before confirming it regardless.
 
 A pin also silences part of an upgrade quietly: the ZFS kernel module ships
 inside the kernel package, so a pinned kernel keeps the old module while the
@@ -121,7 +126,7 @@ release. Never improvise this one - Proxmox publishes a checker and a guide, and
 the guide is the authority:
 
 ```bash
-pve8to9 --full        # the checker for 8.4 -> 9; later majors ship an equivalent
+pve8to9 --full        # the checker for 8.4 -> 9; the upgrade guide names the one for later majors
 ```
 
 The sequence, in order:
@@ -136,7 +141,7 @@ The sequence, in order:
    the locally installed docs.
 4. Verify backups of every guest, and of `/etc/pve` itself.
 5. Update the repository entries to the new Debian suite, then `apt update` and
-   `apt dist-upgrade`.
+   `apt full-upgrade`.
 6. On a cluster: one node at a time, verifying the cluster is healthy between
    nodes. Mixed versions are supported during the upgrade window, not as a
    permanent state.

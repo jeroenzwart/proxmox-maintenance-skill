@@ -61,16 +61,18 @@ Notes that matter in practice:
     primary group - otherwise the other containers silently lose access.
   - **ACLs need `acltype=posixacl`** on the ZFS dataset; where it is `off`,
     `setfacl` is not an option and group ownership plus setgid is the only route.
-  - PVE 9 supports a per-mountpoint `idmap=` option, which maps one specific
-    UID instead of restructuring groups. Useful, but it diverges from however
-    the rest of the host is set up - prefer consistency unless there is a reason.
+  - PVE 9.2 added a per-mountpoint `idmap=` option (unprivileged containers
+    only), which maps one specific UID instead of restructuring groups.
+    Useful, but it diverges from however the rest of the host is set up -
+    prefer consistency unless there is a reason.
 - **Bind mount contents are excluded from vzdump and PBS.** Guest disks on a
   storage are backed up; a bind-mounted host directory is not, at all. If data
   needs to survive, it needs its own arrangement (`zfs send`, a backup client
-  inside the guest, or a replica) - or put it on a storage-backed mount point,
-  which is included.
-- **Changing a container's hostname or network** takes effect on restart; changing
-  memory and cores is live.
+  inside the guest, or a replica) - or put it on a storage-backed mount point
+  with `backup=1`, which is included. The GUI sets `backup=1` on new mount
+  points; `pct set` does not.
+- **Changing a container's hostname** takes effect on its next restart; network
+  interfaces, memory and cores are changed live.
 
 ## Storage
 
@@ -96,10 +98,11 @@ Network changes are the most common way to lose access to a host, so:
 
 1. Make sure there is a second way in first - the other node, IPMI/iKVM, or a
    physical console. On a two-node cluster the other node is usually enough.
-2. Edit `/etc/network/interfaces` (or use the GUI, which writes
-   `/etc/network/interfaces.new`).
-3. Apply. `ifreload -a` applies without a reboot on ifupdown2; the GUI's Apply
-   Configuration does the same. A reboot also applies it.
+2. Edit `/etc/network/interfaces` directly, or use the GUI, which stages its
+   changes in `/etc/network/interfaces.new`.
+3. Apply. Direct edits: `ifreload -a`. Staged GUI changes: Apply Configuration
+   in the GUI, or a reboot - `ifreload -a` alone does not read
+   `interfaces.new`.
 4. Verify from a *new* connection before closing the working one.
 
 ```bash

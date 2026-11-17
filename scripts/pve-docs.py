@@ -12,7 +12,7 @@ Commands:
                          cached online notes are current
   sync [--force]         (re)build the index if the version or docs changed
   search QUERY [-n N]    ranked sections; prints doc id, title and a snippet
-  show DOC_ID [--lines N]  full text of one section
+  show DOC_ID [--chars N]  full text of one section
   online-path [--version V]  where to store fetched release notes
 
 Everything is read-only with respect to the system; the only writes go to the
@@ -435,7 +435,7 @@ def cmd_status(args) -> int:
     if not present:
         print(
             f"\nACTION: fetch the release notes and known issues for PVE {ver} from\n"
-            f"  https://pve.proxmox.com/wiki/Roadmap#Proxmox_VE_{ver.replace('.', '.')}\n"
+            f"  https://pve.proxmox.com/wiki/Roadmap#Proxmox_VE_{ver}\n"
             f"  https://pve.proxmox.com/wiki/Roadmap#{ver}-known-issues\n"
             f"and save a summary to {path}"
         )

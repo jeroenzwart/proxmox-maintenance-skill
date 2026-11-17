@@ -158,7 +158,8 @@ ethtool <iface> | grep -E 'Speed|Duplex|Link detected'
   has the physical uplink as a member, and that VLAN awareness matches what the
   guests expect.
 - **Interface names changed after a hardware or kernel change** - this silently
-  breaks bridges. `pve-network-interface-pinning` exists precisely for this.
+  breaks bridges. `pve-network-interface-pinning generate` pins the names for
+  exactly this; the pinned names take effect after a reboot.
 - **A guest interface but no traffic**: with the PVE firewall enabled each guest
   gets `fwbr`/`fwpr`/`veth` devices; check `pve-firewall status` and the guest's
   firewall rules before suspecting the bridge.
@@ -195,8 +196,9 @@ ss -tlnp | grep 8006
 
 Common causes: an expired certificate, a full root filesystem, `pve-cluster` down
 (so `/etc/pve` is empty and pveproxy cannot read its config), or a custom
-certificate whose key does not match. `pvecm updatecerts` regenerates the
-cluster's internal certificates when they are the problem.
+certificate whose key does not match. `pvecm updatecerts --force` generates new
+cluster-internal certificates when they are the problem; without `--force` it
+only fills in missing files.
 
 ## Performance complaints
 
