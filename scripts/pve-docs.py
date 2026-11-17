@@ -45,8 +45,7 @@ ONLINE_DIR = CACHE_DIR / "online"
 SKIP_TAGS = {"script", "style", "head"}
 STOPWORDS = {
     "the", "a", "an", "of", "to", "in", "on", "for", "and", "or", "is", "are",
-    "how", "do", "i", "my", "with", "van", "de", "het", "een", "op", "hoe",
-    "ik", "je", "mijn", "en", "of", "voor", "met", "naar", "wat", "waarom",
+    "how", "do", "i", "my", "with", "what", "why",
 }
 
 

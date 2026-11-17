@@ -7,14 +7,13 @@ description: >-
   whenever the user mentions Proxmox, PVE, a node or cluster, corosync/quorum,
   LXC containers or VMs (pct/qm), /etc/pve, ZFS pools on a hypervisor, Proxmox
   Backup Server or vzdump, or asks about updating, rebooting, troubleshooting or
-  changing their virtualization host - including Dutch phrasings like "mijn
-  server", "de host", "container doet het niet", "onderhoud". Use it too for
-  symptoms that prove Proxmox-side: a guest that will not start, storage shown
-  as inactive, a node dropped from the cluster, a failed backup job, an
-  unreachable web UI, a disk throwing errors. Not for work inside a guest rather
-  than to it - configuring an app in a container (PHP settings, config files,
-  packages) is ordinary Linux work - nor for storage on separate appliances such
-  as a Synology or TrueNAS.
+  changing their virtualization host, in whatever language they write. Use it
+  too for symptoms that prove Proxmox-side: a guest that will not start,
+  storage shown as inactive, a node dropped from the cluster, a failed backup
+  job, an unreachable web UI, a disk throwing errors. Not for work inside a
+  guest rather than to it - configuring an app in a container (PHP settings,
+  config files, packages) is ordinary Linux work - nor for storage on separate
+  appliances such as a Synology or TrueNAS.
 allowed-tools: Bash(bash ${CLAUDE_SKILL_DIR}/scripts/pve-check.sh*) Bash(python3 ${CLAUDE_SKILL_DIR}/scripts/pve-docs.py status*) Bash(python3 ${CLAUDE_SKILL_DIR}/scripts/pve-docs.py search*) Bash(python3 ${CLAUDE_SKILL_DIR}/scripts/pve-docs.py show*)
 ---
 
@@ -179,7 +178,7 @@ assuming. Two facts change how you plan almost every job:
   before concluding a node is real.
 
 For migrations, HA, and node removal, read
-`${CLAUDE_SKILL_DIR}/references/wijzigen.md`; removing a node in particular is
+`${CLAUDE_SKILL_DIR}/references/changes.md`; removing a node in particular is
 one of the few genuinely unrecoverable operations in PVE.
 
 ## 5. Deeper references
@@ -189,7 +188,7 @@ Load these when the task calls for them - they are detail, not preamble:
 - `${CLAUDE_SKILL_DIR}/references/diagnose.md` - symptom-to-cause routes per
   subsystem: guests that will not start, storage, ZFS, cluster/corosync,
   network, backups, web UI, performance. Start here when something is broken.
-- `${CLAUDE_SKILL_DIR}/references/wijzigen.md` - recipes for common changes
+- `${CLAUDE_SKILL_DIR}/references/changes.md` - recipes for common changes
   (guests, storage, network, backup jobs, users) done the reversible way, plus
   the operations that deserve extra care.
 - `${CLAUDE_SKILL_DIR}/references/upgrades.md` - repository layout, routine

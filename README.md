@@ -37,7 +37,7 @@ bash, and the `pve-docs` package.
 | `scripts/pve-check.sh` | Read-only health snapshot: cluster/quorum, ZFS per vdev, SMART with temperature and wear, backup coverage, repositories, certificates, network conflicts. Cluster-wide over SSH with `--cluster` |
 | `scripts/pve-docs.py` | Search the admin guide for the *running* version, from the copy installed on the host |
 | `references/diagnose.md` | Symptom-to-cause routes per subsystem |
-| `references/wijzigen.md` | Reversible recipes for common changes, and the operations that deserve care |
+| `references/changes.md` | Reversible recipes for common changes, and the operations that deserve care |
 | `references/upgrades.md` | Repositories, kernels, reboots around quorum, major upgrades |
 
 ## Two design decisions worth knowing
