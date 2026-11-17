@@ -35,7 +35,7 @@ bash, and the `pve-docs` package.
 |---|---|
 | `SKILL.md` | The working method, and the four findings worth carrying into any answer |
 | `scripts/check.sh` | Read-only health snapshot: cluster/quorum, ZFS per vdev, SMART with temperature and wear, backup coverage, repositories, certificates, network conflicts. Cluster-wide over SSH with `--cluster` |
-| `scripts/pve-docs.py` | Search the admin guide for the *running* version, from the copy installed on the host |
+| `scripts/docs.py` | Search the admin guide for the *running* version, from the copy installed on the host |
 | `references/pve/diagnose.md` | Symptom-to-cause routes per subsystem |
 | `references/pve/changes.md` | Reversible recipes for common changes, and the operations that deserve care |
 | `references/pve/upgrades.md` | Repositories, kernels, reboots around quorum, major upgrades |
@@ -45,7 +45,7 @@ bash, and the `pve-docs` package.
 **The documentation is already local.** The `pve-docs` package installs the
 complete admin guide under `/usr/share/pve-docs/`, and apt keeps it in step with
 the installed PVE version. Downloading a manual is therefore unnecessary and
-risks answering from the wrong release. `pve-docs.py` indexes that HTML into
+risks answering from the wrong release. `docs.py` indexes that HTML into
 searchable text and rebuilds the index automatically the moment `pveversion` or
 the docs package changes. Only what is genuinely not local - release notes,
 known issues, upgrade guides - is fetched from the web and cached per version.

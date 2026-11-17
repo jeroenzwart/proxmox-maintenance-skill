@@ -61,7 +61,7 @@ Notes that matter in practice:
   it quietly consumes the old storage forever.
 - **Unprivileged containers map UIDs**, so files created inside land as high UIDs
   on the host. Bind-mount permission problems nearly always come from this;
-  `python3 <skill-dir>/scripts/pve-docs.py search unprivileged container bind mount` has the mapping rules.
+  `python3 <skill-dir>/scripts/docs.py search unprivileged container bind mount` has the mapping rules.
   The default offset is 100000 (`/etc/subuid`), so a host directory owned by
   `100501:100401` appears inside the container as uid 501, gid 401. Read the
   host ownership first and match it, rather than loosening permissions until it

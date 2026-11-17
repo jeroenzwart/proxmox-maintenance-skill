@@ -156,7 +156,7 @@ The sequence, in order:
    permanent state.
 7. Reboot, then check quorum, guests, storage and the web UI before moving on.
 
-After any version change, run `python3 <skill-dir>/scripts/pve-docs.py status`. It will report that the
+After any version change, run `python3 <skill-dir>/scripts/docs.py status`. It will report that the
 online notes for the new version are missing - fetch the release notes and known
 issues and cache them, so later sessions know what changed on this host.
 
