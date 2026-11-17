@@ -1,4 +1,9 @@
-# proxmox-maintenance
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="assets/logo/lockup-horizontal-reversed.svg">
+    <img src="assets/logo/lockup-horizontal-color.svg" alt="Proxmox Maintenance" width="480">
+  </picture>
+</p>
 
 A Claude Code skill for maintaining Proxmox VE hosts and clusters: health
 checks, diagnosing failures, making changes safely, and planning updates and
