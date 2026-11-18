@@ -51,6 +51,14 @@ class ProductDetectionTest(unittest.TestCase):
         self.assertEqual(result.stdout.strip(), "pve")
 
 
+class HelpTest(unittest.TestCase):
+    def test_help_shows_the_whole_header(self):
+        result = run_check("pve-manager", "--help")
+
+        self.assertIn("# PDM: remotes subscriptions", result.stdout)
+        self.assertNotIn("set -uo", result.stdout)
+
+
 class SectionValidationTest(unittest.TestCase):
     def test_unknown_section_exits_2(self):
         result = run_check("pve-manager", "--section", "stroage")

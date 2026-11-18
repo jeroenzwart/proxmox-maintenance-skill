@@ -48,7 +48,7 @@ while [ $# -gt 0 ]; do
     --section) ONLY="${2:-}"; shift ;;
     --section=*) ONLY="${1#*=}" ;;
     --products) LIST_PRODUCTS=1 ;;
-    -h|--help) sed -n '2,21p' "$0"; exit 0 ;;
+    -h|--help) sed -n '2,/^$/{/^$/d;p}' "$0"; exit 0 ;;
     *) echo "unknown argument: $1" >&2; exit 2 ;;
   esac
   shift
