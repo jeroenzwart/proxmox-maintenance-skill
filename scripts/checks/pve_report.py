@@ -180,12 +180,67 @@ def notifications(raw: str, now: float) -> list[str]:
     return []
 
 
+def blocks(raw: str) -> dict[str, str]:
+    """Input split on `### <name>` lines."""
+    found: dict[str, str] = {}
+    name = None
+    for line in raw.splitlines(keepends=True):
+        head = re.match(r"^### (\S+)\s*$", line)
+        if head:
+            name = head.group(1)
+            found[name] = ""
+        elif name:
+            found[name] += line
+
+    return found
+
+
+# Kinds of second factor that count; recovery keys alone are a fallback, not a factor.
+TFA_KINDS = ("totp", "webauthn", "u2f", "yubico")
+
+
+def security(raw: str, now: float) -> list[str]:
+    """Blocks: `### tfa` (tfa.cfg JSON, UNREADABLE, or SKIP without PVE), `### sshd` (sshd -T),
+    optionally `### firewall` (cluster.fw; PVE only)."""
+    parts = blocks(raw)
+    if "tfa" not in parts or "sshd" not in parts:
+        raise ValueError("expected '### tfa' and '### sshd' blocks")
+    findings = []
+
+    tfa = parts["tfa"].strip()
+    if tfa == "SKIP":
+        pass
+    elif tfa == "UNREADABLE":
+        findings.append("NOTE could not read the two-factor configuration (needs root) - root@pam's second factor not checked")
+    else:
+        root = json.loads(tfa or "{}").get("users", {}).get("root@pam", {})
+        factors = [entry for kind in TFA_KINDS for entry in root.get(kind, [])
+                   if entry.get("info", {}).get("enable", True)]
+        if not factors:
+            findings.append("WARN root@pam has no second factor (TOTP, WebAuthn or YubiKey) - "
+                            "its password alone opens the whole host; add one under Datacenter > Permissions > Two Factor")
+
+    sshd = dict(line.split(None, 1) for line in parts["sshd"].splitlines() if len(line.split(None, 1)) == 2)
+    if sshd.get("permitrootlogin") == "yes" and sshd.get("passwordauthentication") == "yes":
+        findings.append("WARN SSH allows root to log in with a password (PermitRootLogin yes, PasswordAuthentication yes) - "
+                        "use keys for root ('PermitRootLogin prohibit-password'); keep a working key session open while changing it")
+
+    if "firewall" in parts:
+        enabled_line = re.search(r"^enable:\s*(\d)", parts["firewall"], re.MULTILINE)
+        if not enabled_line or enabled_line.group(1) != "1":
+            findings.append("NOTE the datacenter firewall is disabled - fine behind a trusted network edge; "
+                            "whether ports are reachable from outside cannot be seen from this host")
+
+    return findings
+
+
 REPORTS = {
     "coverage": coverage,
     "snapshots": snapshots,
     "replication": replication,
     "ha": ha,
     "notifications": notifications,
+    "security": security,
 }
 
 

@@ -539,3 +539,28 @@ host_notifications() {
       | python3 "$SCRIPT_DIR/checks/pve_report.py" notifications)
   done
 }
+
+# Notes unless stated: these are choices an admin may have made on purpose.
+# Only what the host itself shows is reported - whether a port is reachable
+# from outside depends on the network in front of it.
+host_security() {
+  local tfa=/etc/pve/priv/tfa.cfg
+  sec security || return 0
+  report_lines < <({
+      echo "### tfa"
+      if ! contains "$PRODUCTS" pve; then
+        echo SKIP
+      elif [ -r "$tfa" ]; then
+        # tfa.cfg has no trailing newline; without one the next header joins it.
+        cat "$tfa"; echo
+      else
+        echo UNREADABLE
+      fi
+      echo "### sshd"
+      have sshd && sshd -T 2>/dev/null | grep -iE '^(permitrootlogin|passwordauthentication) '
+      if contains "$PRODUCTS" pve; then
+        echo "### firewall"
+        cat /etc/pve/firewall/cluster.fw 2>/dev/null; echo
+      fi
+    } | python3 "$SCRIPT_DIR/checks/pve_report.py" security)
+}

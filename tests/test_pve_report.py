@@ -148,6 +148,63 @@ class NotificationsTest(unittest.TestCase):
         self.assertTrue(lines[0].startswith("WARN "), lines)
 
 
+SSHD_SAFE = "permitrootlogin prohibit-password\npasswordauthentication yes\n"
+SSHD_OPEN = "permitrootlogin yes\npasswordauthentication yes\n"
+TOTP = json.dumps({"users": {"root@pam": {"totp": [{"info": {"id": "x", "description": "phone",
+                                                             "created": 1, "enable": True}, "entry": "…"}]}}})
+FIREWALL_ON = "[OPTIONS]\n\nenable: 1\n"
+
+
+def security(tfa=TOTP, sshd=SSHD_SAFE, firewall=FIREWALL_ON):
+    return f"### tfa\n{tfa}\n### sshd\n{sshd}### firewall\n{firewall}"
+
+
+class SecurityTest(unittest.TestCase):
+    def test_root_without_tfa_warns(self):
+        code, lines = report("security", security(tfa="{}"))
+
+        self.assertEqual(code, 0)
+        self.assertEqual(len(lines), 1, lines)
+        self.assertTrue(lines[0].startswith("WARN "), lines)
+        self.assertIn("root@pam", lines[0])
+
+    def test_root_with_only_recovery_keys_warns(self):
+        code, lines = report("security", security(tfa=json.dumps({"users": {"root@pam": {"recovery": {"keys": []}}}})))
+
+        self.assertEqual(len(lines), 1, lines)
+        self.assertTrue(lines[0].startswith("WARN "), lines)
+
+    def test_root_with_totp_is_silent(self):
+        code, lines = report("security", security())
+
+        self.assertEqual(lines, [])
+
+    def test_unreadable_tfa_is_note(self):
+        code, lines = report("security", security(tfa="UNREADABLE"))
+
+        self.assertEqual(len(lines), 1, lines)
+        self.assertTrue(lines[0].startswith("NOTE "), lines)
+
+    def test_tfa_skip_is_silent(self):
+        code, lines = report("security", security(tfa="SKIP"))
+
+        self.assertEqual(lines, [])
+
+    def test_ssh_password_and_root_login_warns(self):
+        code, lines = report("security", security(sshd=SSHD_OPEN))
+
+        self.assertEqual(len(lines), 1, lines)
+        self.assertTrue(lines[0].startswith("WARN "), lines)
+        self.assertIn("PermitRootLogin", lines[0])
+
+    def test_firewall_disabled_is_note(self):
+        code, lines = report("security", security(firewall=""))
+
+        self.assertEqual(len(lines), 1, lines)
+        self.assertTrue(lines[0].startswith("NOTE "), lines)
+        self.assertIn("firewall", lines[0])
+
+
 class InvalidInputTest(unittest.TestCase):
     def test_invalid_input_is_note(self):
         code, lines = report("coverage", "not json")
