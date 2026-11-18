@@ -1,0 +1,4 @@
+#!/usr/bin/env bash
+# Test stub: everything is mounted, unless $STUB_PVE_UNMOUNTED is set.
+[ -n "${STUB_PVE_UNMOUNTED:-}" ] && exit 1
+exit 0

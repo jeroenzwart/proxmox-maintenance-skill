@@ -133,7 +133,8 @@ def enabled(options: dict[str, list[str]]) -> bool:
     return options.get("disable", ["0"])[-1] not in ("1", "true")
 
 
-# What PVE and PBS use when notifications.cfg has no entries of its own.
+# Built into proxmox-notify and always merged with notifications.cfg; a section
+# of the same name there overrides (or disables) the built-in one.
 DEFAULT_NOTIFICATIONS = """sendmail: mail-to-root
 \tmailto-user root@pam
 
@@ -153,7 +154,9 @@ def notifications(raw: str, now: float) -> list[str]:
         user, _, email = line.strip().partition(" ")
         if user and email:
             emails[user] = email
-    sections = parse_sections(config) or parse_sections(DEFAULT_NOTIFICATIONS)
+    merged = {name: (kind, name, options) for kind, name, options in parse_sections(DEFAULT_NOTIFICATIONS)}
+    merged.update({name: (kind, name, options) for kind, name, options in parse_sections(config)})
+    sections = list(merged.values())
 
     targets = {name: (kind, options) for kind, name, options in sections if kind != "matcher"}
     used = {target for kind, _, options in sections if kind == "matcher" and enabled(options)
@@ -178,6 +181,31 @@ def notifications(raw: str, now: float) -> list[str]:
                 f"set an address on the user or add a target"]
 
     return []
+
+
+def excluded(raw: str, now: float) -> list[str]:
+    """jobs.cfg, then `### guests` and one vmid per line. Prints `ID <vmid>` for
+    each guest that some job excludes explicitly and no enabled job selects."""
+    jobs_text, marker, guests_text = raw.partition("### guests\n")
+    if not marker:
+        raise ValueError("expected a '### guests' line")
+    vmids = [int(line) for line in guests_text.split() if line.isdigit()]
+
+    def ids(options: dict[str, list[str]], key: str) -> set[int]:
+        return {int(v) for value in options.get(key, []) for v in value.split(",") if v.strip().isdigit()}
+
+    jobs = [options for kind, _, options in parse_sections(jobs_text) if kind == "vzdump"]
+    named_in_exclude = set().union(*(ids(job, "exclude") for job in jobs)) if jobs else set()
+    active = [job for job in jobs if job.get("enabled", ["1"])[-1] != "0"]
+    # Pool membership is not in jobs.cfg; a pool job may select any guest.
+    if any(job.get("pool") for job in active):
+        return []
+
+    def selected(vmid: int) -> bool:
+        return any((job.get("all", ["0"])[-1] == "1" and vmid not in ids(job, "exclude"))
+                   or vmid in ids(job, "vmid") for job in active)
+
+    return [f"ID {vmid}" for vmid in vmids if vmid in named_in_exclude and not selected(vmid)]
 
 
 def blocks(raw: str) -> dict[str, str]:
@@ -271,6 +299,7 @@ REPORTS = {
     "notifications": notifications,
     "security": security,
     "ceph": ceph,
+    "excluded": excluded,
 }
 
 

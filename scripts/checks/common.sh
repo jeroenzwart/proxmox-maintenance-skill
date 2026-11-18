@@ -30,6 +30,9 @@ metric() { record METRIC "$1" "$2"; }
 # Counted from the record, so a warning raised in a subshell counts too.
 warn_count() { grep -c '^WARN' "$RECORD" 2>/dev/null || true; }
 have() { command -v "$1" >/dev/null 2>&1; }
+# /etc/pve is pmxcfs, mounted by pve-cluster. Without it every PVE config file
+# reads as missing, which each section would report as its own wrong cause.
+pve_config_mounted() { mountpoint -q /etc/pve 2>/dev/null; }
 # Map WARN/NOTE lines from the report helpers onto warn/note. Feed it with
 # `< <(...)`, not a pipe: in a piped subshell the warning count is lost.
 report_lines() {
@@ -491,7 +494,9 @@ host_update() {
     echo "  /boot: ${free} MB free"
     [ "$free" -lt "$BOOT_MIN_FREE_MB" ] && warn "/boot has only ${free} MB free (below ${BOOT_MIN_FREE_MB} MB) - a kernel update may fail halfway; remove old kernels first"
   fi
-  if contains "$PRODUCTS" pve; then
+  if contains "$PRODUCTS" pve && ! pve_config_mounted; then
+    warn "/etc/pve is not mounted (pve-cluster down?) - do not update until it is back"
+  elif contains "$PRODUCTS" pve; then
     # shellcheck source=pve.sh
     . "$SCRIPT_DIR/checks/pve.sh"
     if [ -e /etc/pve/corosync.conf ]; then
@@ -526,7 +531,12 @@ host_notifications() {
   sec notifications || return 0
   for product in $PRODUCTS; do
     case "$product" in
-      pve) config=/etc/pve/notifications.cfg ;;
+      pve)
+        if ! pve_config_mounted; then
+          note "pve: skipped, /etc/pve is not mounted"
+          continue
+        fi
+        config=/etc/pve/notifications.cfg ;;
       pbs) config=/etc/proxmox-backup/notifications.cfg ;;
       *) continue ;;
     esac
@@ -544,22 +554,26 @@ host_notifications() {
 # Notes unless stated: these are choices an admin may have made on purpose.
 # Only what the host itself shows is reported - whether a port is reachable
 # from outside depends on the network in front of it.
+TFA_CFG=/etc/pve/priv/tfa.cfg
+
 host_security() {
-  local tfa=/etc/pve/priv/tfa.cfg
   sec security || return 0
   report_lines < <({
       echo "### tfa"
-      if ! contains "$PRODUCTS" pve; then
+      if ! contains "$PRODUCTS" pve || ! pve_config_mounted; then
         echo SKIP
-      elif [ -r "$tfa" ]; then
+      elif [ ! -e "$TFA_CFG" ] && [ -d "$(dirname "$TFA_CFG")" ] && [ -r "$(dirname "$TFA_CFG")" ]; then
+        # The file appears only once a second factor was ever configured.
+        echo '{}'
+      elif [ -r "$TFA_CFG" ]; then
         # tfa.cfg has no trailing newline; without one the next header joins it.
-        cat "$tfa"; echo
+        cat "$TFA_CFG"; echo
       else
         echo UNREADABLE
       fi
       echo "### sshd"
       have sshd && sshd -T 2>/dev/null | grep -iE '^(permitrootlogin|passwordauthentication) '
-      if contains "$PRODUCTS" pve; then
+      if contains "$PRODUCTS" pve && pve_config_mounted; then
         echo "### firewall"
         cat /etc/pve/firewall/cluster.fw 2>/dev/null; echo
       fi

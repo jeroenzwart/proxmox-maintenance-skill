@@ -52,6 +52,13 @@ class HistoryTest(unittest.TestCase):
 
         self.assertEqual(lines, [])
 
+    def test_second_warning_differing_only_in_digits_is_new(self):
+        self.history("save", "WARN\tsmart\tdisk /dev/nvme0n1 has 3 reallocated sector(s)\n")
+        lines = self.history("diff", "WARN\tsmart\tdisk /dev/nvme0n1 has 3 reallocated sector(s)\n"
+                                     "WARN\tsmart\tdisk /dev/nvme1n1 has 5 reallocated sector(s)\n")
+
+        self.assertEqual(lines, ["NEW smart: disk /dev/nvme1n1 has 5 reallocated sector(s)"])
+
     def test_keeps_newest_20(self):
         checks = self.cache / "checks"
         checks.mkdir(parents=True)

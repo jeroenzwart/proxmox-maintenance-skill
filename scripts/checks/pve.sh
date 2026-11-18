@@ -181,10 +181,6 @@ pve_cluster_sweep() {
   done
 }
 
-# vmids from a jobs.cfg key such as "exclude 101,102" or "vmid 100".
-jobs_vmids() {
-  awk -v key="$1" '$1 == key {gsub(/,/, " ", $2); print $2}' /etc/pve/jobs.cfg 2>/dev/null | tr ' ' '\n' | grep -E '^[0-9]+$' | sort -u
-}
 
 # Every guest on this node against the newest backup on any backup storage,
 # PBS included. A job that reports OK says nothing about a guest it skips.
@@ -219,9 +215,9 @@ for b in json.load(sys.stdin):
   guests="$( { timeout 60 qm list 2>/dev/null | awk 'NR > 1 {print $1, $2}'
                timeout 60 pct list 2>/dev/null | awk 'NR > 1 {print $1, $NF}'; } \
     | awk '{printf "{\"vmid\": %d, \"name\": \"%s\"},", $1, $2}')"
-  # A guest named in an "exclude" list but selected by no job by id was left
-  # out on purpose.
-  excluded="$(comm -23 <(jobs_vmids exclude) <(jobs_vmids vmid) | tr '\n' ',')"
+  # Left out on purpose: excluded by name somewhere and selected by no job.
+  excluded="$( { cat /etc/pve/jobs.cfg 2>/dev/null; echo "### guests"; echo "$guests" | grep -oE '"vmid": [0-9]+' | grep -oE '[0-9]+'; } \
+    | python3 "$SCRIPT_DIR/checks/pve_report.py" excluded | awk '$1 == "ID" {print $2}' | tr '\n' ',')"
   report_lines < <(printf '{"guests": [%s], "backups": [%s], "excluded": [%s]}' \
       "${guests%,}" "${backups%,}" "${excluded%,}" \
     | python3 "$SCRIPT_DIR/checks/pve_report.py" coverage)

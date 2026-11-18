@@ -13,8 +13,9 @@ QUIET = STUBS / "quiet"
 CACHE = tempfile.TemporaryDirectory()
 
 
-def run_check(installed, *args, log="", quiet=False, failed_unit=""):
+def run_check(installed, *args, log="", quiet=False, failed_unit="", pve_unmounted=False):
     env = dict(os.environ)
+    env["STUB_PVE_UNMOUNTED"] = "1" if pve_unmounted else ""
     env["STUB_FAILED_UNIT"] = failed_unit
     # Full runs save their record; keep that out of the real cache.
     env["PROXMOX_SKILL_CACHE"] = CACHE.name
@@ -114,12 +115,49 @@ class JsonOutputTest(unittest.TestCase):
 
         self.assertEqual(result.stdout.splitlines()[-1], "1", result.stdout + result.stderr)
 
+    def security_with_tfa(self, path):
+        script = f"""
+            ONLY=""; RECORD=/dev/null; SCRIPT_DIR={ROOT / "scripts"}; PRODUCTS=pve
+            contains() {{ case " $1 " in *" $2 "*) return 0 ;; esac; return 1; }}
+            . {ROOT / "scripts" / "checks" / "common.sh"}
+            TFA_CFG={path}
+            host_security
+        """
+        return subprocess.run(["bash", "-c", script], capture_output=True, text=True, timeout=30).stdout
+
+    def test_missing_tfa_cfg_means_no_second_factor(self):
+        with tempfile.TemporaryDirectory() as priv:
+            output = self.security_with_tfa(f"{priv}/tfa.cfg")
+
+        self.assertIn("root@pam has no second factor", output)
+
+    def test_tfa_cfg_path_is_read(self):
+        with tempfile.NamedTemporaryFile("w", suffix=".cfg") as tfa:
+            tfa.write(json.dumps({"users": {"root@pam": {"totp": [{"info": {"enable": True}}]}}}))
+            tfa.flush()
+            output = self.security_with_tfa(tfa.name)
+
+        self.assertNotIn("second factor", output)
+
     def test_json_lists_section_warning(self):
         result = run_check("pve-manager", "--json", "--section", "services", quiet=True,
                            failed_unit="broken.service")
 
         document = json.loads(result.stdout)
         self.assertIn({"section": "services", "message": "1 failed systemd unit(s)"}, document["warnings"])
+
+
+class PveClusterDownTest(unittest.TestCase):
+    def test_unmounted_etc_pve_is_one_warning(self):
+        result = run_check("pve-manager", "--json", quiet=True, pve_unmounted=True)
+
+        document = json.loads(result.stdout)
+        pve_config = [w for w in document["warnings"] if "/etc/pve" in w["message"]]
+        self.assertEqual(len(pve_config), 1, document["warnings"])
+        self.assertIn("not mounted", pve_config[0]["message"])
+        sections = {w["section"] for w in document["warnings"]}
+        self.assertFalse(sections & {"backup", "coverage", "notifications", "snapshots"}, document["warnings"])
+        self.assertFalse([w for w in document["warnings"] if "second factor" in w["message"]], document["warnings"])
 
 
 class DiffTest(unittest.TestCase):

@@ -120,6 +120,15 @@ run_product() {
   [ -f "$SCRIPT_DIR/checks/$product.sh" ] || return 0
   # shellcheck disable=SC1090
   . "$SCRIPT_DIR/checks/$product.sh"
+  if [ "$product" = pve ] && ! pve_config_mounted; then
+    for section in $(product_sections pve); do
+      sec "$section" || continue
+      warn "/etc/pve is not mounted (pve-cluster down?) - the PVE sections are skipped because every config would read as missing; check 'systemctl status pve-cluster' first"
+      break
+    done
+
+    return 0
+  fi
   for section in $(product_sections "$product"); do
     "${product}_${section}"
   done

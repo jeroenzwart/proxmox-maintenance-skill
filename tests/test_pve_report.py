@@ -139,6 +139,13 @@ class NotificationsTest(unittest.TestCase):
 
         self.assertEqual(lines, [])
 
+    def test_builtin_targets_apply_next_to_user_targets(self):
+        # proxmox-notify always merges the built-in mail-to-root and default-matcher.
+        config = "smtp: extra\n\tmailto ops@example.org\n\tserver mail.example.org\n"
+        code, lines = report("notifications", config + "### users\nroot@pam root@example.org\n")
+
+        self.assertEqual(lines, [])
+
     def test_matcher_without_enabled_target_warns(self):
         config = "sendmail: mail-to-root\n\tdisable true\n\tmailto-user root@pam\n\n" \
                  "matcher: default-matcher\n\tmode all\n\ttarget mail-to-root\n"
@@ -157,6 +164,38 @@ FIREWALL_ON = "[OPTIONS]\n\nenable: 1\n"
 
 def security(tfa=TOTP, sshd=SSHD_SAFE, firewall=FIREWALL_ON):
     return f"### tfa\n{tfa}\n### sshd\n{sshd}### firewall\n{firewall}"
+
+
+def excluded(jobs, *vmids):
+    code, lines = report("excluded", jobs + "### guests\n" + "".join(f"{v}\n" for v in vmids))
+    return [line for line in lines if not line.startswith("NOTE ")]
+
+
+class ExcludedTest(unittest.TestCase):
+    def test_excluded_by_every_job(self):
+        jobs = "vzdump: a\n\tall 1\n\texclude 101,102\n\tschedule 03:00\n"
+
+        self.assertEqual(excluded(jobs, 101, 103), ["ID 101"])
+
+    def test_selected_by_another_job_is_not_excluded(self):
+        jobs = ("vzdump: a\n\tall 1\n\texclude 101\n\nvzdump: b\n\tall 1\n\tschedule sat\n")
+
+        self.assertEqual(excluded(jobs, 101), [])
+
+    def test_listed_by_vmid_is_not_excluded(self):
+        jobs = ("vzdump: a\n\tall 1\n\texclude 101\n\nvzdump: b\n\tvmid 101\n")
+
+        self.assertEqual(excluded(jobs, 101), [])
+
+    def test_disabled_job_selects_nothing(self):
+        jobs = ("vzdump: a\n\tall 1\n\texclude 101\n\nvzdump: b\n\tall 1\n\tenabled 0\n")
+
+        self.assertEqual(excluded(jobs, 101), ["ID 101"])
+
+    def test_pool_job_may_select_anything(self):
+        jobs = ("vzdump: a\n\tall 1\n\texclude 101\n\nvzdump: b\n\tpool web\n")
+
+        self.assertEqual(excluded(jobs, 101), [])
 
 
 class SecurityTest(unittest.TestCase):

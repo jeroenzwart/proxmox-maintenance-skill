@@ -28,9 +28,9 @@ CACHE_ROOT = Path(
 CHECKS = CACHE_ROOT / "checks"
 
 
-def parse(text: str) -> tuple[dict[str, str], dict[str, str]]:
-    """Warnings keyed by their text with numbers masked, and metrics by name."""
-    warnings: dict[str, str] = {}
+def parse(text: str) -> tuple[dict[str, list[str]], dict[str, str]]:
+    """Warnings grouped by their text with numbers masked, and metrics by name."""
+    warnings: dict[str, list[str]] = {}
     metrics: dict[str, str] = {}
     for line in text.splitlines():
         fields = line.split("\t")
@@ -41,7 +41,9 @@ def parse(text: str) -> tuple[dict[str, str], dict[str, str]]:
             shown = f"{first}: {second}"
             # Ages and percentages tick on every run; a warning whose numbers
             # moved is the same finding, and the metrics carry the movement.
-            warnings[re.sub(r"\d+(\.\d+)?", "#", shown)] = shown
+            # Masking also merges warnings that differ only in a device or guest
+            # number, so each group keeps every message and is compared by count.
+            warnings.setdefault(re.sub(r"\d+(\.\d+)?", "#", shown), []).append(shown)
         elif kind == "METRIC":
             metrics[first] = second
 
@@ -70,8 +72,15 @@ def diff(record: Path) -> list[str]:
     old_warnings, old_metrics = parse(runs[-1].read_text())
     new_warnings, new_metrics = parse(record.read_text())
 
-    lines = [f"NEW {new_warnings[key]}" for key in new_warnings if key not in old_warnings]
-    lines += [f"GONE {old_warnings[key]}" for key in old_warnings if key not in new_warnings]
+    lines = []
+    for key in list(new_warnings) + [key for key in old_warnings if key not in new_warnings]:
+        old, new = old_warnings.get(key, []), new_warnings.get(key, [])
+        if len(new) > len(old):
+            fresh = [shown for shown in new if shown not in old] or new
+            lines += [f"NEW {shown}" for shown in fresh[:len(new) - len(old)]]
+        elif len(old) > len(new):
+            gone = [shown for shown in old if shown not in new] or old
+            lines += [f"GONE {shown}" for shown in gone[:len(old) - len(new)]]
     lines += [f"MOVED {name} {old_metrics[name]} -> {value}" for name, value in new_metrics.items()
               if name in old_metrics and old_metrics[name] != value]
 
