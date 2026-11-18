@@ -1,0 +1,32 @@
+### 101
+arch: amd64
+hostname: web
+memory: 1024
+parent: before-upgrade
+rootfs: tank:subvol-101-disk-0,size=8G
+unprivileged: 1
+
+[before-upgrade]
+arch: amd64
+hostname: web
+memory: 1024
+rootfs: tank:subvol-101-disk-0,size=8G
+snaptime: 999900000
+unprivileged: 1
+
+[pending]
+memory: 2048
+### 102
+boot: order=scsi0
+name: db
+scsi0: tank:vm-102-disk-0,size=32G
+
+[vzdump]
+boot: order=scsi0
+name: db
+snapstate: prepare
+snaptime: 1002000000
+
+[recent]
+name: db
+snaptime: 1002500000

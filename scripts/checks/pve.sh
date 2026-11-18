@@ -180,3 +180,57 @@ pve_cluster_sweep() {
     ' 2>&1 | sed 's/^/  /'
   done
 }
+
+# vmids from a jobs.cfg key such as "exclude 101,102" or "vmid 100".
+jobs_vmids() {
+  awk -v key="$1" '$1 == key {gsub(/,/, " ", $2); print $2}' /etc/pve/jobs.cfg 2>/dev/null | tr ' ' '\n' | grep -E '^[0-9]+$' | sort -u
+}
+
+# Every guest on this node against the newest backup on any backup storage,
+# PBS included. A job that reports OK says nothing about a guest it skips.
+pve_coverage() {
+  local storages storage listing guests backups excluded
+  sec coverage || return 0
+  storages="$(timeout 60 pvesm status --content backup 2>/dev/null | awk 'NR > 1 && $3 == "active" {print $1}')"
+  if [ -z "$storages" ]; then
+    warn "no active storage with content 'backup' - no guest on this node has a reachable backup"
+
+    return 0
+  fi
+  backups=""
+  for storage in $storages; do
+    listing="$(timeout 60 pvesh get "/nodes/$NODE/storage/$storage/content" --content backup --output-format json 2>/dev/null)"
+    if [ -z "$listing" ]; then
+      note "could not list the backups on storage $storage"
+      continue
+    fi
+    echo "  $storage: $(echo "$listing" | python3 -c 'import json,sys; print(len(json.load(sys.stdin)))' 2>/dev/null || echo '?') backup(s)"
+    backups="$backups$(echo "$listing" | python3 -c '
+import json, sys
+for b in json.load(sys.stdin):
+    print("{\"vmid\": %d, \"ctime\": %d}," % (int(b["vmid"]), int(b["ctime"])))' 2>/dev/null)"
+  done
+  # qm list ends rows with a PID column, pct list may have an empty Lock column,
+  # so the name is the second field for VMs and the last one for containers.
+  guests="$( { timeout 60 qm list 2>/dev/null | awk 'NR > 1 {print $1, $2}'
+               timeout 60 pct list 2>/dev/null | awk 'NR > 1 {print $1, $NF}'; } \
+    | awk '{printf "{\"vmid\": %d, \"name\": \"%s\"},", $1, $2}')"
+  # A guest named in an "exclude" list but selected by no job by id was left
+  # out on purpose.
+  excluded="$(comm -23 <(jobs_vmids exclude) <(jobs_vmids vmid) | tr '\n' ',')"
+  report_lines < <(printf '{"guests": [%s], "backups": [%s], "excluded": [%s]}' \
+      "${guests%,}" "${backups%,}" "${excluded%,}" \
+    | python3 "$SCRIPT_DIR/checks/pve_report.py" coverage)
+  note "a guest counts as covered with a backup newer than 7 days on any backup storage"
+}
+
+pve_snapshots() {
+  local f
+  sec snapshots || return 0
+  report_lines < <(for f in /etc/pve/qemu-server/*.conf /etc/pve/lxc/*.conf; do
+      [ -f "$f" ] || continue
+      echo "### $(basename "$f" .conf)"
+      cat "$f"
+    done | python3 "$SCRIPT_DIR/checks/pve_report.py" snapshots)
+  note "snapshots older than 30 days and leftover 'vzdump' snapshots are listed above as !!"
+}

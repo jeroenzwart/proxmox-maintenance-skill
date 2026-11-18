@@ -16,6 +16,17 @@ sec() {
 warn() { WARN_COUNT=$((WARN_COUNT + 1)); printf '  !! %s\n' "$*"; }
 note() { printf '  -- %s\n' "$*"; }
 have() { command -v "$1" >/dev/null 2>&1; }
+# Map WARN/NOTE lines from the report helpers onto warn/note. Feed it with
+# `< <(...)`, not a pipe: in a piped subshell the warning count is lost.
+report_lines() {
+  local kind message
+  while read -r kind message; do
+    case "$kind" in
+      WARN) warn "$message" ;;
+      NOTE) note "$message" ;;
+    esac
+  done
+}
 
 # --- products ---------------------------------------------------------------
 # The server package decides, not a client tool: every PVE host also carries
