@@ -40,13 +40,23 @@ not travel between machines; this section is the record. Branch:
 | Task | State |
 |---|---|
 | 1 PBS samples | open - needs the owner's PBS host |
-| 2 Restructure | done, `62122d1` |
-| 3 docs.py | done, `15f4981` |
+| 2 Restructure | done, `42beac3` |
+| 3 docs.py | done, `9fe5e06` |
 | 4 PBS checks | open - blocked on Task 1 |
 | 5 PBS references | open - blocked on Task 1 |
-| 6 PDM | done, `d80fe1c` (untested: no PDM host) |
-| 7 SKILL.md/README | done, `a727d76` |
-| 8-18 Phase 2 | open - to be built on a PVE host |
+| 6 PDM | done, `a344af4` (untested: no PDM host) |
+| 7 SKILL.md/README | done, `d5ea9a4` |
+| 8 Verify on PVE host | done, `043e670` (6 warnings, all real; test_docs import fix for Python 3.13) |
+| 9 Coverage, snapshots | done, `94451c7` |
+| 10 Restore test guide | done, `f94b2bb` |
+| 11 `--diff` | done, `c77506b` |
+| 12 Update readiness | done, `5c5cda5` |
+| 13 Replication, HA | done, `c93e635` (warning paths untested: no jobs/HA on the host) |
+| 14 Notifications | done, `7cb8472` |
+| 15 Security | done, `72a9e52` |
+| 16 Ceph | done, `f785d11` (untested: no Ceph) |
+| 17 `--json` | done, `1374c30` |
+| 18 Docs + review | done, `25af6c6` `599b622`, review fixes `da759b8` |
 
 Rulings made so far (each: decision - reason):
 - One stub `dpkg-query` driven by `$STUB_INSTALLED` in `tests/stubs/` - less fixture code.
@@ -59,7 +69,29 @@ Rulings made so far (each: decision - reason):
 - PDM `subscriptions` prints the CLI text plus the 80% rule as a note; no guessed JSON parsing.
 - Unverified PDM claims were left out of the references.
 
-Nothing has run on a real Proxmox host yet. Task 8 does that first.
+Phase 2 rulings (each: decision - reason):
+- Coverage "excluded" = excluded in some job and selected by no enabled job; a pool job means nothing counts as excluded - pool membership is not in jobs.cfg.
+- `[pending]` and `[special:*]` config sections are not snapshots.
+- `report_lines` (common.sh) maps WARN/NOTE lines; fed with `< <(...)` so warnings count.
+- The run record is one tab-separated file (`WARN|NOTE <section> <message>`, `METRIC <name> <value>`); the summary count, `--diff` and `--json` all read it. `WARN_COUNT` is gone.
+- `--diff` masks numbers in warnings and compares by count per masked text; `--diff` with `--section`/`--product` exits 2; SMART metrics are keyed by serial.
+- `tests/stubs/quiet/` makes full runs in tests hermetic (<3 s instead of 22 s on the host).
+- Replication and HA read the API JSON (`pvesh`), not `pvesr status` text.
+- Notifications merge the built-in `mail-to-root`/`default-matcher` with the file, as proxmox-notify does.
+- tfa.cfg is JSON; recovery keys alone are no second factor; a missing tfa.cfg means none. Realm-enforced TFA and PBS TFA are not checked.
+- `/etc/pve` not mounted: one warning, PVE sections skipped.
+- `restore test`: off the network via `link_down=1` per NIC; bind mounts come back with `pct restore` and are removed before the first start.
+
+Open (review minors, deferred): `--section` without a value runs the full sweep;
+`--json --diff` drops the diff; `--cluster` findings land under the last
+section and are saved as a normal run; PDM failed `remote list` also says "no
+remotes", remotes probed serially; Ceph fast failure reads as timeout and
+`ceph -s` runs twice; non-root runs give false notification/firewall findings;
+notifications ignore legacy-sendmail vzdump jobs; coverage re-runs qm/pct list
+(~5 s); run record in /tmp; snapshots note always printed; history same-second
+suffix ordering; `host_update` resets the pvecm memo.
+Observed on the host, outside phase 2: `--full` logs show kernel RAS memory
+errors without a warning; `df` lists `/` twice when `/var/lib/vz` is on root.
 
 ---
 
