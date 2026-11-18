@@ -1,4 +1,5 @@
 import importlib.util
+import sys
 import tempfile
 import unittest
 from pathlib import Path
@@ -9,6 +10,8 @@ FIXTURES = ROOT / "tests" / "fixtures" / "docs"
 # Loaded by path: the name "docs" would resolve to the repository's docs/ folder.
 spec = importlib.util.spec_from_file_location("proxmox_docs", ROOT / "scripts" / "docs.py")
 proxmox_docs = importlib.util.module_from_spec(spec)
+# dataclass resolves string annotations through sys.modules (Python 3.12+).
+sys.modules[spec.name] = proxmox_docs
 spec.loader.exec_module(proxmox_docs)
 
 
