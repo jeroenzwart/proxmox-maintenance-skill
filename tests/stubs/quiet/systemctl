@@ -1,1 +1,7 @@
-_quiet
+#!/usr/bin/env bash
+# Test stub: no units, or one failed unit named by $STUB_FAILED_UNIT.
+case "$1" in
+  --failed) [ -n "${STUB_FAILED_UNIT:-}" ] && echo "$STUB_FAILED_UNIT loaded failed failed stub" ;;
+  is-active) echo active ;;
+esac
+exit 0

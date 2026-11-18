@@ -2,23 +2,12 @@
 #
 # Built from the PDM 1.1 documentation; not yet verified on a real PDM host.
 
-# Map json_report.py findings onto warn/note.
-pdm_report() {
-  local kind message
-  while read -r kind message; do
-    case "$kind" in
-      WARN) warn "$message" ;;
-      NOTE) note "$message" ;;
-    esac
-  done
-}
-
 pdm_remotes() {
   local listing ids id
   sec remotes || return 0
   listing="$(timeout 30 proxmox-datacenter-manager-admin remote list --output-format json 2>&1)"
   ids="$(echo "$listing" | python3 "$SCRIPT_DIR/checks/json_report.py" pdm-remotes)"
-  echo "$ids" | grep -v '^ID ' | pdm_report
+  report_lines < <(echo "$ids" | grep -v '^ID ')
   ids="$(echo "$ids" | awk '$1 == "ID" {print $2}')"
   if [ -z "$ids" ]; then
     note "no remotes configured"

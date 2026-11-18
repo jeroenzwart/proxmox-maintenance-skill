@@ -6,9 +6,10 @@
 # conclusions rest on what the machine actually reports rather than on
 # assumptions about how it was set up.
 #
-# Usage: check.sh [--full] [--cluster] [--diff] [--product P] [--section NAME] [--products]
+# Usage: check.sh [--full] [--cluster] [--diff] [--json] [--product P] [--section NAME] [--products]
 #   --full          also read recent journal errors (slower)
 #   --diff          after the summary, compare with the previous full run
+#   --json          print only one JSON document: host, products, warnings, notes
 #   --cluster       PVE: repeat the core checks on the other nodes via SSH
 #   --product P     only the sections of one product: pve pbs pdm
 #   --section NAME  run only one section (host-level or product)
@@ -35,17 +36,19 @@ ONLY=""
 ONLY_PRODUCT=""
 LIST_PRODUCTS=0
 DIFF=0
+JSON=0
 while [ $# -gt 0 ]; do
   case "$1" in
     --full) FULL=1 ;;
     --cluster) CLUSTER=1 ;;
     --diff) DIFF=1 ;;
+    --json) JSON=1 ;;
     --product) ONLY_PRODUCT="${2:-}"; shift ;;
     --product=*) ONLY_PRODUCT="${1#*=}" ;;
     --section) ONLY="${2:-}"; shift ;;
     --section=*) ONLY="${1#*=}" ;;
     --products) LIST_PRODUCTS=1 ;;
-    -h|--help) sed -n '2,20p' "$0"; exit 0 ;;
+    -h|--help) sed -n '2,21p' "$0"; exit 0 ;;
     *) echo "unknown argument: $1" >&2; exit 2 ;;
   esac
   shift
@@ -122,17 +125,24 @@ run_product() {
 }
 
 print_summary() {
+  local count
+  count="$(warn_count)"
   printf '\n===== SUMMARY =====\n'
-  if [ "$WARN_COUNT" = 0 ]; then
+  if [ "$count" = 0 ]; then
     echo "  no warnings raised"
   else
-    echo "  $WARN_COUNT warning(s) - see the !! lines above"
+    echo "  $count warning(s) - see the !! lines above"
   fi
   echo "  scope: node=$NODE products=${PRODUCTS:-none} full=$FULL cluster=$CLUSTER${ONLY_PRODUCT:+ product=$ONLY_PRODUCT}${ONLY:+ section=$ONLY}"
 }
 
 validate_section
 validate_product
+# The human report still runs in full, so the record is the same either way;
+# stdout carries nothing but the document.
+if [ "$JSON" = 1 ]; then
+  exec 3>&1 1>/dev/null
+fi
 # A partial run compared with a full one would list everything it skipped as gone.
 if [ "$DIFF" = 1 ] && { [ -n "$ONLY" ] || [ -n "$ONLY_PRODUCT" ]; }; then
   echo "--diff compares full runs; drop --section and --product" >&2
@@ -176,5 +186,19 @@ if [ -z "$ONLY" ] && [ -z "$ONLY_PRODUCT" ]; then
     fi
   fi
   python3 "$SCRIPT_DIR/checks/history.py" save "$RECORD" | sed 's/^/  /'
+fi
+if [ "$JSON" = 1 ]; then
+  python3 - "$RECORD" "$NODE" "$PRODUCTS" >&3 <<'PY'
+import json, sys
+record, host, products = sys.argv[1:4]
+found = {"WARN": [], "NOTE": []}
+with open(record, encoding="utf-8", errors="replace") as lines:
+    for line in lines:
+        kind, _, rest = line.rstrip("\n").partition("\t")
+        section, _, message = rest.partition("\t")
+        if kind in found:
+            found[kind].append({"section": section, "message": message})
+print(json.dumps({"host": host, "products": products.split(), "warnings": found["WARN"], "notes": found["NOTE"]}, indent=2))
+PY
 fi
 exit 0

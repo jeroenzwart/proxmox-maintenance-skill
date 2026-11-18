@@ -4,7 +4,6 @@
 # packages, services, certificates, network, ZFS, disks. They run once per
 # host, whichever products are installed.
 
-WARN_COUNT=0
 NODE="$(hostname)"
 
 # Kernels and initrds land in /boot; an update that runs out of room there
@@ -24,10 +23,12 @@ sec() {
   return 0
 }
 record() { printf '%s\t%s\t%s\n' "$1" "$2" "$3" >> "$RECORD"; }
-warn() { WARN_COUNT=$((WARN_COUNT + 1)); printf '  !! %s\n' "$*"; record WARN "$CURRENT_SECTION" "$*"; }
+warn() { printf '  !! %s\n' "$*"; record WARN "$CURRENT_SECTION" "$*"; }
 note() { printf '  -- %s\n' "$*"; record NOTE "$CURRENT_SECTION" "$*"; }
 # A value worth comparing between runs (check.sh --diff); prints nothing.
 metric() { record METRIC "$1" "$2"; }
+# Counted from the record, so a warning raised in a subshell counts too.
+warn_count() { grep -c '^WARN' "$RECORD" 2>/dev/null || true; }
 have() { command -v "$1" >/dev/null 2>&1; }
 # Map WARN/NOTE lines from the report helpers onto warn/note. Feed it with
 # `< <(...)`, not a pipe: in a piped subshell the warning count is lost.

@@ -1,3 +1,4 @@
+import json
 import os
 import subprocess
 import tempfile
@@ -12,8 +13,9 @@ QUIET = STUBS / "quiet"
 CACHE = tempfile.TemporaryDirectory()
 
 
-def run_check(installed, *args, log="", quiet=False):
+def run_check(installed, *args, log="", quiet=False, failed_unit=""):
     env = dict(os.environ)
+    env["STUB_FAILED_UNIT"] = failed_unit
     # Full runs save their record; keep that out of the real cache.
     env["PROXMOX_SKILL_CACHE"] = CACHE.name
     env["PATH"] = f"{STUBS}:{env['PATH']}"
@@ -77,6 +79,39 @@ class UpdateSectionTest(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertIn("===== UPDATE", result.stdout)
         self.assertIn("pve8to9", result.stdout)
+
+
+class JsonOutputTest(unittest.TestCase):
+    def test_json_output_is_one_document(self):
+        result = run_check("pve-manager", "--json", quiet=True)
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        document = json.loads(result.stdout)
+        self.assertEqual(set(document), {"host", "products", "warnings", "notes"})
+        self.assertEqual(document["products"], ["pve"])
+        self.assertTrue(all(set(w) == {"section", "message"} for w in document["warnings"]), document)
+
+    def test_json_counts_subshell_warnings(self):
+        # A warning raised in a piped subshell must reach both the JSON and the
+        # text summary, which a shell counter alone cannot do.
+        script = f"""
+            ONLY=""; RECORD="$(mktemp)"; SCRIPT_DIR={ROOT / "scripts"}
+            . {ROOT / "scripts" / "checks" / "common.sh"}
+            sec services
+            warn "raised inside a pipe" | cat
+            warn_count
+            rm -f "$RECORD"
+        """
+        result = subprocess.run(["bash", "-c", script], capture_output=True, text=True, timeout=30)
+
+        self.assertEqual(result.stdout.splitlines()[-1], "1", result.stdout + result.stderr)
+
+    def test_json_lists_section_warning(self):
+        result = run_check("pve-manager", "--json", "--section", "services", quiet=True,
+                           failed_unit="broken.service")
+
+        document = json.loads(result.stdout)
+        self.assertIn({"section": "services", "message": "1 failed systemd unit(s)"}, document["warnings"])
 
 
 class DiffTest(unittest.TestCase):
