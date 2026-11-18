@@ -45,21 +45,27 @@ bash ${CLAUDE_SKILL_DIR}/scripts/check.sh --full        # + the last 24h of jour
 bash ${CLAUDE_SKILL_DIR}/scripts/check.sh --product pbs # host-level + one product
 bash ${CLAUDE_SKILL_DIR}/scripts/check.sh --section zfs # one area only
 bash ${CLAUDE_SKILL_DIR}/scripts/check.sh --cluster     # PVE: + the other nodes over SSH
+bash ${CLAUDE_SKILL_DIR}/scripts/check.sh --diff        # + what changed since the previous full run
+bash ${CLAUDE_SKILL_DIR}/scripts/check.sh --json        # one JSON document: warnings and notes
+bash ${CLAUDE_SKILL_DIR}/scripts/check.sh --section update  # before any update: readiness
 ```
 
 The check detects which of PVE, PBS and PDM are installed and lists them with
 their versions in its first block. It then prints host-level sections
-(identity, services, packages, certs, network, zfs, disk, smart) and the
-sections of each installed product:
+(identity, services, packages, certs, network, zfs, disk, smart,
+notifications, security) and the sections of each installed product:
 
 | Product | Sections |
 |---|---|
-| PVE | cluster, storage, guests, backup |
+| PVE | cluster, storage, guests (with HA), backup, coverage, snapshots, replication, ceph |
 | PBS | datastores, gc, jobs, tasks, remotes, tape |
 | PDM | remotes, subscriptions |
 
-Problems are marked with `!!`. Everything in it only observes; it starts,
-stops, installs and writes nothing, so it is always safe to run first. Inside
+Two host-level sections run only on request: `logs` (with `--full`) and
+`update` (with `--section update`). Problems are marked with `!!`. Everything
+in it only observes; it starts, stops and installs nothing, and writes only its
+own run history (`~/.cache/proxmox-skill/checks/`, the last 20 full runs, for
+`--diff`), so it is always safe to run first. Inside
 a container it skips what belongs to the host (disks, pools, kernel).
 
 Read the `!!` lines before answering. They frequently explain the user's actual
@@ -92,8 +98,9 @@ check surfaces them, even if the user asked about something else.
   covers the guests, not the host directories mounted into them - which is
   usually where the bulk of the irreplaceable data sits. Never call data "backed
   up" without checking which of the two it is.
-  And a backup is only proven by a restore: see "Testing a restore" in
-  `references/pve/changes.md`.
+  The `coverage` section says which guests have no backup newer than 7 days;
+  read it before calling a guest backed up. And a backup is only proven by a
+  restore: see "Testing a restore" in `references/pve/changes.md`.
 - **Node-restricted storages pin their guests.** A guest using one cannot
   migrate or be restored elsewhere, so "migrate it off first" may simply not be
   available when planning a reboot.
@@ -196,6 +203,9 @@ Guidance that keeps changes reversible on every product:
   `pveum`, `pvecm` on PVE, `proxmox-backup-manager` on PBS and the PDM
   admin/client CLIs validate input and keep state consistent. Where no CLI
   exists, copy the file to `/root/` first, then edit.
+- **Run `check.sh --section update` before any update** - reboot pending,
+  room in `/boot`, quorum, backup coverage and the major-upgrade checker - and
+  carry its `!!` lines into the proposal.
 - **Never `apt upgrade` on Proxmox - always `apt full-upgrade`** (the same as
   `dist-upgrade`). Plain `upgrade` never removes a package, so updates that
   replace or drop one are held back and the stack ends up half-updated.

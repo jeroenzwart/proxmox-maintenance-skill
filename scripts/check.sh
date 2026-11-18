@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
 # Read-only health snapshot of a Proxmox host: PVE, PBS, PDM, or a mix.
 #
-# Every command here only observes: nothing is started, stopped, installed or
-# written. That is deliberate - this runs first, before any diagnosis, so the
+# Every command here only observes: nothing is started, stopped or installed,
+# and the only write is the run history in ~/.cache/proxmox-skill/checks/
+# (for --diff). That is deliberate - this runs first, before any diagnosis, so the
 # conclusions rest on what the machine actually reports rather than on
 # assumptions about how it was set up.
 #

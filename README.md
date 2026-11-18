@@ -36,14 +36,16 @@ each product.
 | Path | Purpose |
 |---|---|
 | `SKILL.md` | The working method, and per product the findings worth carrying into any answer |
-| `scripts/check.sh` | Read-only health snapshot. Detects PVE, PBS and PDM, then runs host-level sections (packages, repositories, certificates, network conflicts, ZFS per vdev, SMART with temperature and wear) and the sections of each product. PVE cluster-wide over SSH with `--cluster` |
-| `scripts/checks/` | The sections: `common.sh` (host-level), `pve.sh`, `pbs.sh`, `pdm.sh` |
+| `scripts/check.sh` | Read-only health snapshot. Detects PVE, PBS and PDM, then runs host-level sections (packages, repositories, certificates, network conflicts, ZFS per vdev, SMART with temperature and wear, backup notifications, a security audit) and the sections of each product - for PVE also backup coverage per guest, forgotten snapshots, replication, HA and Ceph. PVE cluster-wide over SSH with `--cluster`; `--section update` for update readiness, `--diff` for what changed since the previous run, `--json` for machine-readable output |
+| `scripts/checks/` | The sections: `common.sh` (host-level), `pve.sh`, `pbs.sh`, `pdm.sh`; the parsers `pve_report.py`, `json_report.py` and the run history `history.py` |
 | `scripts/docs.py` | Search the manual of each installed product for the *running* version, from the copy installed on the host |
 | `references/<product>/` | Per product: `diagnose.md` (symptom to cause), `changes.md` (reversible recipes), `upgrades.md` (updates and major upgrades) |
 | `tests/` | `python3 -m unittest discover -s tests` |
 
 PDM support is built from the PDM 1.1 documentation and has not yet been
-verified on a real PDM host.
+verified on a real PDM host. The same holds for the Ceph section, and for the
+warning paths of replication and HA, which were built from the PVE sources on a
+host without Ceph, replication jobs or HA resources.
 
 ## Two design decisions worth knowing
 
@@ -56,8 +58,9 @@ the index automatically the moment the product or its docs package changes.
 Only what is genuinely not local - PVE and PBS release notes, known issues,
 upgrade guides - is fetched from the web and cached per version.
 
-**Everything observed is observed read-only.** `check.sh` starts, stops,
-installs and writes nothing, so it is always safe as a first step. Changes are
+**Everything observed is observed read-only.** `check.sh` starts, stops and
+installs nothing, and writes only its own run history under
+`~/.cache/proxmox-skill/checks/`, so it is always safe as a first step. Changes are
 proposed in a fixed shape - what, what it touches, the commands, the way back,
 the remaining risk - and executed only after the user agrees.
 
