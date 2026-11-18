@@ -19,6 +19,7 @@ cp /etc/network/interfaces /root/interfaces.$(date +%F)  # before network edits
 - [Storage](#storage)
 - [Network](#network)
 - [Backup jobs](#backup-jobs)
+- [Testing a restore](#testing-a-restore)
 - [Users and permissions](#users-and-permissions)
 - [Operations that deserve extra care](#operations-that-deserve-extra-care)
 - [Verifying afterwards](#verifying-afterwards)
@@ -149,6 +150,57 @@ vzdump <id> --storage <s> --mode snapshot     # one-off, run it before risky wor
 A backup job is only real once a run has succeeded and a restore has been tried.
 When you set one up, check the first execution rather than assuming the schedule
 works, and confirm retention (`prune-backups`) so the target does not fill.
+
+## Testing a restore
+
+A backup is only proven by a restore. The test restores a copy next to the
+original, keeps it off the network, checks it, and removes it. It writes (a new
+guest, new volumes), so propose it in the usual shape first; the original guest
+is never touched.
+
+```bash
+# read-only: pick the backup, a free ID and a storage with room
+pvesm list <backup-storage> --vmid <id>        # volid of the newest backup
+pvesm extractconfig <volid>                    # what the restore will recreate
+pvesh get /cluster/nextid                      # free ID, e.g. 9001
+pvesm status                                   # target storage and its free space
+
+# VM: --unique 1 gives new MAC addresses; the restore does not start it
+qmrestore <volid> <newid> --storage <s> --unique 1
+qm set <newid> --onboot 0 --name restoretest-<id>
+qm set <newid> --net0 <model>,bridge=<bridge>,link_down=1   # copy net0 from 'qm config', add link_down=1, per netX
+
+# container: --unique 1 likewise; it does not start unless --start 1 is given
+pct restore <newid> <volid> --storage <s> --unique 1
+pct set <newid> --onboot 0 --hostname restoretest-<id>
+pct set <newid> --net0 name=eth0,bridge=<bridge>,link_down=1   # per netX, from 'pct config'
+pct config <newid> | grep -E '^mp[0-9]+: /'    # bind mounts came back - remove each:
+pct set <newid> --delete mp<N>
+
+# verify
+qm start <newid>   ; qm terminal <newid> / the console      # boots, services start, data is there
+pct start <newid>  ; pct enter <newid>
+
+# clean up - check the ID twice: destroy has no undo
+qm stop <newid>  ; qm destroy <newid> --purge
+pct stop <newid> ; pct destroy <newid> --purge
+```
+
+What to watch:
+
+- **Bind mounts come back with the restore.** `pct restore` re-adds bind and
+  device mount points to the restored config (without content - they are never
+  backed up). A test container started with them sees, and can write to, the
+  live host data. Remove them before the first start.
+- **Same addresses, same names.** A restored guest carries the original's static
+  IPs and hostname; `link_down=1` on every interface keeps it from colliding with
+  the original, `--unique 1` avoids duplicate MAC addresses.
+- **Passed-through devices** (`hostpci`, `usb`) in a VM config point at hardware
+  the original is using; remove them from the copy before starting it.
+- **Space.** The copy needs as much room as the original's disks on the target
+  storage; on a nearly full pool pick another storage or a smaller guest.
+- **Live-restore** (`qmrestore --live-restore 1`, PBS only) starts the VM while
+  data still streams in; for a test the plain restore is the clearer proof.
 
 ## Users and permissions
 

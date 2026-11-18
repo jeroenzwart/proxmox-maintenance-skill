@@ -92,6 +92,8 @@ check surfaces them, even if the user asked about something else.
   covers the guests, not the host directories mounted into them - which is
   usually where the bulk of the irreplaceable data sits. Never call data "backed
   up" without checking which of the two it is.
+  And a backup is only proven by a restore: see "Testing a restore" in
+  `references/pve/changes.md`.
 - **Node-restricted storages pin their guests.** A guest using one cannot
   migrate or be restored elsewhere, so "migrate it off first" may simply not be
   available when planning a reboot.
