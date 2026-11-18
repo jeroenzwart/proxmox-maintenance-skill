@@ -16,7 +16,7 @@
 #
 # Host-level sections: identity services packages certs network zfs disk smart notifications security logs
 # Only on request (--section): update
-# PVE: cluster storage guests backup coverage snapshots replication
+# PVE: cluster storage guests backup coverage snapshots replication ceph
 # PBS: datastores gc jobs tasks remotes tape
 # PDM: remotes subscriptions
 
@@ -25,7 +25,7 @@ set -uo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 HOST_SECTIONS="identity services packages certs network zfs disk smart notifications security logs update"
-PVE_SECTIONS="cluster storage guests backup coverage snapshots replication"
+PVE_SECTIONS="cluster storage guests backup coverage snapshots replication ceph"
 PBS_SECTIONS="datastores gc jobs tasks remotes tape"
 PDM_SECTIONS="remotes subscriptions"
 

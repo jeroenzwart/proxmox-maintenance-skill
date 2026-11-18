@@ -1,0 +1,4 @@
+{"fsid": "00000000-0000-0000-0000-000000000000",
+ "health": {"status": "HEALTH_OK", "checks": {}, "mutes": []},
+ "osdmap": {"epoch": 120, "num_osds": 3, "num_up_osds": 3, "osd_up_since": 1002500000, "num_in_osds": 3, "osd_in_since": 1000000000, "num_remapped_pgs": 0},
+ "pgmap": {"num_pgs": 129, "bytes_used": 300000000000, "bytes_avail": 700000000000, "bytes_total": 1000000000000}}

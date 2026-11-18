@@ -234,6 +234,35 @@ def security(raw: str, now: float) -> list[str]:
     return findings
 
 
+def ceph(raw: str, now: float) -> list[str]:
+    """`ceph -s --format json`. Built from the documented fields; not yet seen on a Ceph host."""
+    data = json.loads(raw)
+    health = data["health"]
+    osdmap = data.get("osdmap", {})
+    osdmap = osdmap.get("osdmap", osdmap)  # nested one level deeper before Ceph Reef
+    total = int(osdmap.get("num_osds", 0))
+    up = int(osdmap.get("num_up_osds", total))
+    in_ = int(osdmap.get("num_in_osds", total))
+
+    findings = []
+    # Down OSDs get their own line with the count, so OSD_DOWN is not repeated.
+    if up < total:
+        findings.append(f"WARN Ceph: {total - up} of {total} OSDs are down - data has reduced redundancy until they return")
+    if in_ < total:
+        findings.append(f"WARN Ceph: {total - in_} of {total} OSDs are out - their data is being or was moved to the others")
+    for code, check in sorted(health.get("checks", {}).items()):
+        if code == "OSD_DOWN" and up < total:
+            continue
+        message = check.get("summary", {}).get("message", "")
+        if check.get("muted"):
+            findings.append(f"NOTE Ceph {code} is muted: {message}")
+        else:
+            findings.append(f"WARN Ceph {check.get('severity', health.get('status'))} {code}: {message} - "
+                            f"'ceph health detail' lists the affected daemons")
+
+    return findings
+
+
 REPORTS = {
     "coverage": coverage,
     "snapshots": snapshots,
@@ -241,6 +270,7 @@ REPORTS = {
     "ha": ha,
     "notifications": notifications,
     "security": security,
+    "ceph": ceph,
 }
 
 

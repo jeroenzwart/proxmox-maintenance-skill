@@ -252,3 +252,24 @@ pve_replication() {
   fi
   report_lines < <(echo "$jobs" | python3 "$SCRIPT_DIR/checks/pve_report.py" replication)
 }
+
+# ceph-common comes with every PVE install, so the binary alone says nothing;
+# /etc/pve/ceph.conf exists once Ceph is set up for the cluster. A monitor that
+# cannot be reached makes the ceph CLI wait indefinitely, hence the timeout.
+pve_ceph() {
+  local status
+  sec ceph || return 0
+  if [ ! -f /etc/pve/ceph.conf ] || ! have ceph; then
+    note "Ceph is not configured on this cluster"
+
+    return 0
+  fi
+  status="$(timeout 20 ceph -s --format json 2>/dev/null)"
+  if [ -z "$status" ]; then
+    warn "ceph -s gave no answer within 20s - monitors unreachable or no quorum among them"
+
+    return 0
+  fi
+  timeout 20 ceph -s 2>/dev/null | sed 's/^/  /' | head -25
+  report_lines < <(echo "$status" | python3 "$SCRIPT_DIR/checks/pve_report.py" ceph)
+}

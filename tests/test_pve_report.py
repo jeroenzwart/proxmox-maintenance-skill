@@ -205,6 +205,27 @@ class SecurityTest(unittest.TestCase):
         self.assertIn("firewall", lines[0])
 
 
+class CephTest(unittest.TestCase):
+    def test_health_warn_lists_checks(self):
+        code, lines = report("ceph", (FIXTURES / "ceph-warn.json").read_text())
+
+        self.assertEqual(code, 0)
+        self.assertTrue([line for line in lines if line.startswith("WARN ") and "OSD_NEARFULL" in line], lines)
+        self.assertTrue([line for line in lines if line.startswith("NOTE ") and "AUTH_INSECURE_KEY" in line], lines)
+
+    def test_osd_down_warns(self):
+        code, lines = report("ceph", (FIXTURES / "ceph-warn.json").read_text())
+
+        down = [line for line in lines if "down" in line and line.startswith("WARN ")]
+        self.assertEqual(len(down), 1, lines)
+        self.assertIn("1 of 3", down[0])
+
+    def test_health_ok_is_silent(self):
+        code, lines = report("ceph", (FIXTURES / "ceph-ok.json").read_text())
+
+        self.assertEqual(lines, [])
+
+
 class InvalidInputTest(unittest.TestCase):
     def test_invalid_input_is_note(self):
         code, lines = report("coverage", "not json")
