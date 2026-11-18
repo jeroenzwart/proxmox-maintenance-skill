@@ -187,8 +187,12 @@ jobs_vmids() {
 # Every guest on this node against the newest backup on any backup storage,
 # PBS included. A job that reports OK says nothing about a guest it skips.
 pve_coverage() {
-  local storages storage listing guests backups excluded
   sec coverage || return 0
+  pve_coverage_report
+}
+
+pve_coverage_report() {
+  local storages storage listing guests backups excluded
   storages="$(timeout 60 pvesm status --content backup 2>/dev/null | awk 'NR > 1 && $3 == "active" {print $1}')"
   if [ -z "$storages" ]; then
     warn "no active storage with content 'backup' - no guest on this node has a reachable backup"

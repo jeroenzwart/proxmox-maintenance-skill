@@ -15,6 +15,7 @@
 #   --products      print the detected products and exit
 #
 # Host-level sections: identity services packages certs network zfs disk smart logs
+# Only on request (--section): update
 # PVE: cluster storage guests backup coverage snapshots
 # PBS: datastores gc jobs tasks remotes tape
 # PDM: remotes subscriptions
@@ -23,7 +24,7 @@ set -uo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
-HOST_SECTIONS="identity services packages certs network zfs disk smart logs"
+HOST_SECTIONS="identity services packages certs network zfs disk smart logs update"
 PVE_SECTIONS="cluster storage guests backup coverage snapshots"
 PBS_SECTIONS="datastores gc jobs tasks remotes tape"
 PDM_SECTIONS="remotes subscriptions"
@@ -152,6 +153,9 @@ done
 if [ "$FULL" = 1 ] || [ "$ONLY" = "logs" ]; then
   host_logs
 fi
+# Update readiness repeats checks from other sections, so it is not part of
+# the default sweep; run it before an update.
+[ "$ONLY" = "update" ] && host_update
 # pve.sh is only sourced when the PVE sections ran.
 if [ "$CLUSTER" = 1 ] && declare -F pve_cluster_sweep >/dev/null; then
   pve_cluster_sweep

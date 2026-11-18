@@ -1,0 +1,4 @@
+#!/usr/bin/env bash
+# Test stub: a host command that answers with nothing, so a full check.sh run
+# in the tests neither reads the real host nor waits on it.
+exit 0

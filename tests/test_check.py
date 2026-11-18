@@ -6,16 +6,19 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 STUBS = ROOT / "tests" / "stubs"
+QUIET = STUBS / "quiet"
 
 
 CACHE = tempfile.TemporaryDirectory()
 
 
-def run_check(installed, *args, log=""):
+def run_check(installed, *args, log="", quiet=False):
     env = dict(os.environ)
     # Full runs save their record; keep that out of the real cache.
     env["PROXMOX_SKILL_CACHE"] = CACHE.name
     env["PATH"] = f"{STUBS}:{env['PATH']}"
+    if quiet:
+        env["PATH"] = f"{QUIET}:{env['PATH']}"
     env["STUB_INSTALLED"] = installed
     env["STUB_LOG"] = log
 
@@ -58,6 +61,22 @@ class SectionValidationTest(unittest.TestCase):
 
         self.assertEqual(result.returncode, 2)
         self.assertIn("not installed", result.stderr)
+
+
+class UpdateSectionTest(unittest.TestCase):
+    def test_update_not_in_default_sweep(self):
+        result = run_check("pve-manager", quiet=True)
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("===== SUMMARY", result.stdout)
+        self.assertNotIn("===== UPDATE", result.stdout)
+
+    def test_update_section_accepted(self):
+        result = run_check("pve-manager", "--section", "update", quiet=True)
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("===== UPDATE", result.stdout)
+        self.assertIn("pve8to9", result.stdout)
 
 
 class DiffTest(unittest.TestCase):

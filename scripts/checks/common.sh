@@ -7,6 +7,10 @@
 WARN_COUNT=0
 NODE="$(hostname)"
 
+# Kernels and initrds land in /boot; an update that runs out of room there
+# leaves a half-installed kernel behind.
+BOOT_MIN_FREE_MB=200
+
 CURRENT_SECTION=""
 # Every finding and metric also goes to the run record, a file rather than a
 # variable so that one raised inside a subshell is kept too. check.sh creates it.
@@ -469,4 +473,38 @@ host_logs() {
   journalctl --since '24 hours ago' -p err --no-pager 2>/dev/null \
     | sed -E 's/^[A-Z][a-z]{2} +[0-9]+ [0-9:]+ [^ ]+ //; s/[0-9]{4,}/N/g' \
     | sort | uniq -c | sort -rn | head -20 | sed 's/^/  /'
+}
+
+host_update() {
+  local count free checker quorate
+  sec update || return 0
+  if [ "$IN_CONTAINER" = 1 ]; then
+    note "running in a container: kernel and reboot state belong to the host, skipped"
+  else
+    kernel_status
+  fi
+  count="$(apt_upgradable | grep -c .)"
+  echo "  $count package(s) upgradable (apt list --upgradable; run 'apt update' first for a fresh list)"
+  free="$(df -m --output=avail /boot 2>/dev/null | tail -1 | tr -dc '0-9')"
+  if [ -n "$free" ]; then
+    echo "  /boot: ${free} MB free"
+    [ "$free" -lt "$BOOT_MIN_FREE_MB" ] && warn "/boot has only ${free} MB free (below ${BOOT_MIN_FREE_MB} MB) - a kernel update may fail halfway; remove old kernels first"
+  fi
+  if contains "$PRODUCTS" pve; then
+    # shellcheck source=pve.sh
+    . "$SCRIPT_DIR/checks/pve.sh"
+    if [ -e /etc/pve/corosync.conf ]; then
+      quorate="$(pvecm_status | awk -F': *' '/^Quorate/{print $2; exit}' | tr -d ' \r')"
+      if [ "$quorate" = "Yes" ]; then
+        note "cluster is quorate"
+      else
+        warn "cluster quorum is '${quorate:-unknown}' - do not update until the cluster is quorate"
+      fi
+    fi
+    echo "  -- backup coverage --"
+    pve_coverage_report
+  fi
+  for checker in pve8to9 pve9to10 pbs3to4 pbs4to5; do
+    have "$checker" && note "$checker is installed: before a major upgrade run '$checker --full' and resolve every FAIL and WARN"
+  done
 }
