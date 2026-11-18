@@ -12,7 +12,7 @@
 
 ## Global Constraints
 
-- Checks are read-only; the only writes are the docs cache under `~/.cache/proxmox-skill/<product>/`.
+- Checks are read-only; the only writes are the skill cache under `~/.cache/proxmox-skill/` (docs index per product, saved check runs for `--diff`).
 - No dependencies beyond the product ISOs: bash, python3, coreutils, openssl. No `jq`.
 - Every network call in a check has a timeout.
 - Current releases: PVE 9.2, PBS 4.2, PDM 1.1, Debian 13. PBS 3.x is end of life since 2026-08 and is flagged.
@@ -30,6 +30,36 @@
 3. PBS and PVE on one host: both product section sets run; host-level sections run once.
 4. A PDM remote that hangs: the reachability call is bounded by the timeout and the check continues.
 5. Empty or invalid JSON from a CLI (version mismatch, permission error): the parser prints a note and exits 0.
+
+## Status (2026-11-18)
+
+The execution ledger lives in the git-ignored `.superpowers/` folder and does
+not travel between machines; this section is the record. Branch:
+`fix/skill-review`.
+
+| Task | State |
+|---|---|
+| 1 PBS samples | open - needs the owner's PBS host |
+| 2 Restructure | done, `62122d1` |
+| 3 docs.py | done, `15f4981` |
+| 4 PBS checks | open - blocked on Task 1 |
+| 5 PBS references | open - blocked on Task 1 |
+| 6 PDM | done, `d80fe1c` (untested: no PDM host) |
+| 7 SKILL.md/README | done, `a727d76` |
+| 8-18 Phase 2 | open - to be built on a PVE host |
+
+Rulings made so far (each: decision - reason):
+- One stub `dpkg-query` driven by `$STUB_INSTALLED` in `tests/stubs/` - less fixture code.
+- Host-level section functions are `host_<section>`; product sections `<product>_<section>`.
+- The `interfaces.new` check runs for every product - PBS stages GUI network changes the same way.
+- Fixed: the network-conflict `warn` ran in a piped subshell and was never counted.
+- `Product` in `docs.py` also has `label` and `issues_url`; the `PVE_DOCS_DIR` override is gone.
+- `docs.py --product` is a global option before the subcommand; `allowed-tools` grants `docs.py --product*`.
+- `json_report.py` exists with the `pdm-remotes` report only; Task 4 adds the PBS reports.
+- PDM `subscriptions` prints the CLI text plus the 80% rule as a note; no guessed JSON parsing.
+- Unverified PDM claims were left out of the references.
+
+Nothing has run on a real Proxmox host yet. Task 8 does that first.
 
 ---
 
@@ -210,3 +240,105 @@ No PDM host is available; everything here is built from the docs and marked unte
 - [ ] **Step 4: Verify** `wc -l SKILL.md` under 500; `grep -rn 'pve-docs.py\|pve-check.sh' SKILL.md README.md references scripts` → no output.
 
 - [ ] **Step 5: Commit** `docs(skill): describe PVE, PBS and PDM`.
+
+
+---
+
+## Phase 2 (spec section "Phase 2: more coverage")
+
+Built on a PVE host, so every command and file format below is checked
+against the host and its local docs (`python3 scripts/docs.py search ...`)
+before code relies on it. Where a fixture is needed, capture the real output
+on the host and anonymise it (guest names, hostnames, IPs, storage names).
+Thresholds are named constants at the top of the file that owns them.
+
+### Task 8: Verify phase 1 on the PVE host
+
+- [ ] **Step 1:** `bash scripts/check.sh` and `bash scripts/check.sh --full`; read every section. Expected: no bash errors, products block shows `pve`, every `!!` is a real finding. Fix false alarms with a test that reproduces them first.
+- [ ] **Step 2:** `python3 scripts/docs.py status`, then `search zfs replace failed disk -n 3` and `show` on one hit. Expected: index builds, hits carry PVE section ids.
+- [ ] **Step 3:** `python3 -m unittest discover -s tests -v` on the host. Expected: OK.
+- [ ] **Step 4: Commit** fixes as `fix(check): ...` per finding.
+
+### Task 9: Backup coverage and forgotten snapshots (features 1, 2)
+
+**Files:** Create `scripts/checks/pve_report.py`, `tests/test_pve_report.py`, fixtures in `tests/fixtures/pve/`. Modify `scripts/checks/pve.sh`, `scripts/check.sh` (sections `coverage snapshots`).
+
+**Interfaces:** `pve_report.py <report> [--now EPOCH]` reads stdin, prints `WARN `/`NOTE ` lines, exits 0 (same contract as `json_report.py`). Reports: `coverage` (stdin: JSON object `{"guests": [{"vmid", "name"}], "backups": [{"vmid", "ctime"}], "excluded": [vmid]}` assembled by `pve.sh`), `snapshots` (stdin: guest configs, each preceded by a line `### <vmid>`).
+
+- [ ] **Step 1: Failing tests:** `test_guest_without_backup_warns` (no backup → `WARN 101 (name) has no backup`); `test_old_backup_warns` (newest `ctime` 8 days before `--now` → WARN with `8 days`); `test_recent_backup_is_silent`; `test_excluded_guest_is_note`; `test_old_snapshot_warns` (`snaptime` 31 days old → WARN naming guest and snapshot); `test_leftover_vzdump_snapshot_warns`; `test_invalid_input_is_note`.
+- [ ] **Step 2:** run → FAIL.
+- [ ] **Step 3:** implement with `COVERAGE_MAX_DAYS = 7`, `SNAPSHOT_MAX_DAYS = 30`. `pve_coverage` gathers storages with content `backup` from `pvesm status --content backup`, their content via `pvesh get /nodes/$NODE/storage/<s>/content --content backup --output-format json` (timeout 60 each), guests from `qm list`/`pct list`, exclusions from `jobs.cfg`.
+- [ ] **Step 4:** tests → PASS; run `check.sh --section coverage` and `--section snapshots` on the host and compare with the GUI.
+- [ ] **Step 5: Commit** `feat(pve): report guests without recent backups and forgotten snapshots`.
+
+### Task 10: Restore test guide (feature 3)
+
+- [ ] **Step 1:** add "Testing a restore" to `references/pve/changes.md`: free ID from `pvesh get /cluster/nextid`, `qmrestore`/`pct restore` to that ID on a chosen storage, keep it off the network (verify the exact option for VMs and containers in the local docs), start, verify, destroy - each command in the propose-then-act shape. Add it to the Contents list.
+- [ ] **Step 2:** in `SKILL.md`, extend the bind-mount bullet with one line: a backup is only proven by a restore; point to the section.
+- [ ] **Step 3: Commit** `docs(pve): add a guided restore test`.
+
+### Task 11: Diff with the previous run (feature 4)
+
+**Files:** Create `scripts/checks/history.py`, `tests/test_history.py`. Modify `scripts/check.sh` (`--diff`), `scripts/checks/common.sh` (metric lines).
+
+**Interfaces:** sections emit metrics with `metric NAME VALUE` (new common.sh helper; prints nothing, appends `METRIC NAME VALUE` to the run record). `history.py save RECORD_FILE` stores it as `~/.cache/proxmox-skill/checks/<YYYYmmdd-HHMMSS>.txt` and keeps the newest 20; `history.py diff RECORD_FILE` compares with the newest saved run and prints `NEW`, `GONE` and `MOVED NAME old -> new` lines.
+
+- [ ] **Step 1: Failing tests:** `test_new_warning_listed`, `test_gone_warning_listed`, `test_metric_moved`, `test_keeps_newest_20`, `test_no_previous_run_is_note` (temp `PROXMOX_SKILL_CACHE`).
+- [ ] **Step 2:** run → FAIL.
+- [ ] **Step 3:** implement. Every full run (no `--section`, no `--product`) saves; `--diff` prints the diff after the summary. Metrics: pool capacity per pool, SMART reallocated and pending per disk, root fs usage.
+- [ ] **Step 4:** tests → PASS; two runs on the host with `--diff` show an empty diff.
+- [ ] **Step 5: Commit** `feat(check): compare a run with the previous one`.
+
+### Task 12: Update readiness (feature 5)
+
+- [ ] **Step 1: Failing test** in `tests/test_check.py`: `test_update_not_in_default_sweep` (stubbed PVE host, default run → no `===== UPDATE` header); `--section update` is accepted.
+- [ ] **Step 2:** run → FAIL.
+- [ ] **Step 3:** implement `host_update` (only with `--section update`): reboot pending (reuse `kernel_status`), pending update count, `/boot` free space below `BOOT_MIN_FREE_MB=200` warns, on PVE quorum and the coverage report (Task 9), and `pve8to9`/`pbs3to4` present → note to run it with `--full`.
+- [ ] **Step 4:** tests → PASS; run on the host.
+- [ ] **Step 5: Commit** `feat(check): add an update readiness section`.
+
+### Task 13: Replication and HA (feature 6)
+
+- [ ] **Step 1:** capture `pvesr status` (and its JSON form if the host's `pvesr` offers one) and `ha-manager status` as fixtures.
+- [ ] **Step 2: Failing tests** in `tests/test_pve_report.py`: `test_replication_failcount_warns`, `test_replication_ok_is_silent`, `test_ha_error_state_warns`.
+- [ ] **Step 3:** implement reports `replication` and `ha` in `pve_report.py`; section `replication` in `pve.sh`; HA warnings in `pve_guests`.
+- [ ] **Step 4:** tests → PASS; run on the host.
+- [ ] **Step 5: Commit** `feat(pve): check replication jobs and HA states`.
+
+### Task 14: Notifications (feature 7)
+
+- [ ] **Step 1:** read the notification chapter in the local docs; capture `/etc/pve/notifications.cfg` (anonymised) as a fixture, plus a minimal default one.
+- [ ] **Step 2: Failing tests:** `test_only_default_target_without_root_mail_warns`, `test_extra_target_is_silent`.
+- [ ] **Step 3:** implement a `notifications` report and host-level section `notifications` (PVE and, when installed, PBS config path).
+- [ ] **Step 4:** tests → PASS; run on the host.
+- [ ] **Step 5: Commit** `feat(check): check that failures notify someone`.
+
+### Task 15: Security audit (feature 8)
+
+- [ ] **Step 1: Failing tests** with fixture text: `test_root_without_tfa_warns` (from `/etc/pve/priv/tfa.cfg` content), `test_ssh_password_and_root_login_warns` (from `sshd -T` output), `test_firewall_disabled_is_note`.
+- [ ] **Step 2:** run → FAIL.
+- [ ] **Step 3:** implement host-level section `security`; reading `tfa.cfg` needs root, unreadable → note. Never claim a port is reachable from outside.
+- [ ] **Step 4:** tests → PASS; run on the host.
+- [ ] **Step 5: Commit** `feat(check): add a security audit section`.
+
+### Task 16: Ceph health (feature 9)
+
+- [ ] **Step 1:** the section runs only when `/etc/pve/ceph.conf` exists and `ceph` is installed; on a host without Ceph it prints a note. Capture `ceph -s --format json` from the docs' examples or a Ceph host if one exists; otherwise build from the documented fields and mark it untested, like PDM.
+- [ ] **Step 2: Failing tests:** `test_health_warn_lists_checks`, `test_osd_down_warns`, `test_health_ok_is_silent`.
+- [ ] **Step 3:** implement report `ceph` and PVE section `ceph`.
+- [ ] **Step 4:** tests → PASS.
+- [ ] **Step 5: Commit** `feat(pve): add a Ceph health summary`.
+
+### Task 17: JSON output (feature 10)
+
+- [ ] **Step 1: Failing tests** in `tests/test_check.py`: `test_json_output_is_one_document` (stubbed PVE host, `--json` → stdout parses with `json.loads`, keys `host products warnings notes`); `test_json_counts_subshell_warnings` (a section that warns inside a pipe is present in `warnings`).
+- [ ] **Step 2:** run → FAIL.
+- [ ] **Step 3:** `warn`/`note` append `section<TAB>message` lines to a temp file (`mktemp`, removed on exit); `--json` sends the human output to /dev/null and prints the document from that file; `WARN_COUNT` in text mode is computed from the same file.
+- [ ] **Step 4:** tests → PASS; `check.sh --json | python3 -m json.tool` on the host.
+- [ ] **Step 5: Commit** `feat(check): add JSON output`.
+
+### Task 18: Document phase 2 and review the branch
+
+- [ ] **Step 1:** `SKILL.md`: add the new sections to the section table and `--diff`, `--json`, `--section update` to the command block; mention update readiness before any update and coverage before calling data backed up. README: same in "What is inside". Check: description at most 1024 characters, body under 500 lines.
+- [ ] **Step 2:** whole-branch review as in superpowers:executing-plans; fix Critical/Important with a failing test first.
+- [ ] **Step 3: Commit** `docs(skill): describe the phase 2 checks`.

@@ -1,7 +1,7 @@
 # Design: cover PVE, PBS and PDM in one skill
 
 Date: 2026-11-17
-Status: draft, awaiting approval
+Status: approved 2026-11-17; phase 2 added 2026-11-18
 
 ## Intent
 
@@ -24,7 +24,8 @@ split per product instead of one PVE-shaped manual.
 
 ## Non-goals
 
-- Proxmox Mail Gateway, Ceph-specific depth, PBS tape beyond a short listing.
+- Proxmox Mail Gateway, Ceph beyond a health summary (phase 2), PBS tape
+  beyond a short listing.
 - Using the backup client inside guests (that is guest work, as today).
 - Managing hosts remotely. The skill works on the host it runs on; the
   existing PVE `--cluster` SSH sweep stays as it is.
@@ -33,7 +34,8 @@ split per product instead of one PVE-shaped manual.
 ## Anti-goals
 
 - Any check that writes, starts, stops or changes state. Checks stay
-  read-only; the only writes are the docs cache, as today.
+  read-only; the only writes are the skill's own cache (docs index, and from
+  phase 2 the saved check results for `--diff`).
 - Answering from memory where the installed docs answer it.
 - A check that hangs on an unreachable PDM remote: every network call has a
   timeout.
@@ -222,6 +224,63 @@ fixture output where it is non-trivial (PBS job states).
 
 Commit 1 moves the ZFS and disk checks into host-level sections, so PVE
 output changes in where those warnings appear, not in what they say.
+
+## Phase 2: more coverage (added 2026-11-18)
+
+The owner asked for ten more features after phase 1. They keep the same
+conventions: read-only, sections in `check.sh`, `!!` for problems, thresholds
+as named constants at the top of the file that owns them. Each fact about a
+command or file format is checked against the local docs (`docs.py`) on a
+real host before the code relies on it; phase 2 is built on a PVE host.
+
+1. **Backup coverage per guest** (PVE section `coverage`). For every guest on
+   this node, the newest backup across all storages with content `backup`
+   (`pvesh get /nodes/<node>/storage/<storage>/content --content backup
+   --output-format json`: fields `vmid`, `ctime`). This covers PBS storages
+   too. Warn when a guest has no backup newer than `COVERAGE_MAX_DAYS=7`, or
+   none at all. Guests excluded from every job are reported as a note, not a
+   warning, when `jobs.cfg` excludes them explicitly.
+2. **Forgotten snapshots** (PVE section `snapshots`). Parse the `[name]`
+   sections and their `snaptime:` in the guest configs; warn for snapshots
+   older than `SNAPSHOT_MAX_DAYS=30`, and for any leftover `vzdump` snapshot.
+3. **Guided restore test** (reference, not a script). A section "Testing a
+   restore" in `references/pve/changes.md`: restore to a free ID
+   (`pvesh get /cluster/nextid`), without network, verify, destroy. It writes,
+   so it follows the propose-then-act shape; `SKILL.md` points to it from the
+   backup bullet.
+4. **Diff with the previous run** (`check.sh --diff`). Every full run saves its
+   `!!` lines and a few metrics (pool capacity, SMART reallocated and pending
+   counts, root fs usage) to `~/.cache/proxmox-skill/checks/<timestamp>.txt`,
+   keeping the last 20. `--diff` runs the check and then prints what is new,
+   what disappeared and which metrics moved since the previous saved run.
+5. **Update readiness** (host-level section `update`, not in the default
+   sweep, run with `--section update`). Reboot pending, pending updates, free
+   space in `/boot` (warn below 200 MB), recent backups (reuses 1 on PVE),
+   quorum (PVE), and when a major-upgrade checker exists on the host
+   (`pve8to9`, `pbs3to4`) the hint to run it with `--full`.
+6. **Replication and HA** (PVE section `replication`, and warnings added to
+   `guests`): `pvesr status` jobs with a non-zero fail count or a state other
+   than OK; HA services in `error` or `fence` state from `ha-manager status`.
+7. **Notifications** (host-level section `notifications`): whether a failed
+   backup or job reaches anyone. PVE: notification targets and matchers in
+   `/etc/pve/notifications.cfg`, and an e-mail address on `root@pam`. PBS:
+   `/etc/proxmox-backup/notifications.cfg`. Warn when the only target is the
+   default mail to root and root has no address.
+8. **Security audit** (host-level section `security`, notes unless stated):
+   `root@pam` without a second factor (warn), SSH `PasswordAuthentication yes`
+   together with `PermitRootLogin yes` (warn, from `sshd -T`), PVE datacenter
+   firewall disabled (note). Whether a port is reachable from outside cannot
+   be seen from the host and is not claimed.
+9. **Ceph health** (PVE section `ceph`, only when Ceph is configured on the
+   node): `ceph -s --format json` health and its summary, OSDs down or out,
+   near-full. Detail stays out of scope.
+10. **JSON output** (`check.sh --json`): stdout carries one JSON document
+    `{"host", "products", "warnings": [{"section", "message"}], "notes": [...]}`
+    and nothing else; findings are collected through a temp file, so a `warn`
+    in a subshell is still counted.
+
+The new sections join the section map in `check.sh` and the section table in
+`SKILL.md`.
 
 ## Left to the builder
 
