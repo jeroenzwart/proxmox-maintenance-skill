@@ -73,12 +73,10 @@ pve_storage() {
   echo "$ps_out" | sed 's/^/  /'
   echo
   # A disabled storage was taken out of use on purpose, so it is not a fault.
-  echo "$ps_out" | awk 'NR>1 && $3!="active" && $3!="disabled"{print "  !! storage "$1" ("$2") is "$3}'
-  inactive="$(echo "$ps_out" | awk 'NR>1 && $3!="active" && $3!="disabled"' | wc -l)"
-  [ "$inactive" -gt 0 ] && WARN_COUNT=$((WARN_COUNT + inactive))
   while read -r line; do
     [ -n "$line" ] && warn "$line"
-  done < <(echo "$ps_out" | awk 'NR>1 {gsub(/%/,"",$7); if ($7+0 > 85) print "storage "$1" is "$7"% full"}')
+  done < <(echo "$ps_out" | awk 'NR>1 && $3!="active" && $3!="disabled"{print "storage "$1" ("$2") is "$3}
+    NR>1 {gsub(/%/,"",$7); if ($7+0 > 85) print "storage "$1" is "$7"% full"}')
 
   # A storage limited to certain nodes silently pins every guest that uses it:
   # the guest cannot migrate, and it cannot be restored elsewhere. That is easy

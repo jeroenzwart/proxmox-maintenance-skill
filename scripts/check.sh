@@ -6,8 +6,9 @@
 # conclusions rest on what the machine actually reports rather than on
 # assumptions about how it was set up.
 #
-# Usage: check.sh [--full] [--cluster] [--product P] [--section NAME] [--products]
+# Usage: check.sh [--full] [--cluster] [--diff] [--product P] [--section NAME] [--products]
 #   --full          also read recent journal errors (slower)
+#   --diff          after the summary, compare with the previous full run
 #   --cluster       PVE: repeat the core checks on the other nodes via SSH
 #   --product P     only the sections of one product: pve pbs pdm
 #   --section NAME  run only one section (host-level or product)
@@ -32,20 +33,25 @@ CLUSTER=0
 ONLY=""
 ONLY_PRODUCT=""
 LIST_PRODUCTS=0
+DIFF=0
 while [ $# -gt 0 ]; do
   case "$1" in
     --full) FULL=1 ;;
     --cluster) CLUSTER=1 ;;
+    --diff) DIFF=1 ;;
     --product) ONLY_PRODUCT="${2:-}"; shift ;;
     --product=*) ONLY_PRODUCT="${1#*=}" ;;
     --section) ONLY="${2:-}"; shift ;;
     --section=*) ONLY="${1#*=}" ;;
     --products) LIST_PRODUCTS=1 ;;
-    -h|--help) sed -n '2,19p' "$0"; exit 0 ;;
+    -h|--help) sed -n '2,20p' "$0"; exit 0 ;;
     *) echo "unknown argument: $1" >&2; exit 2 ;;
   esac
   shift
 done
+
+RECORD="$(mktemp)"
+trap 'rm -f "$RECORD"' EXIT
 
 # shellcheck source=checks/common.sh
 . "$SCRIPT_DIR/checks/common.sh"
@@ -126,6 +132,11 @@ print_summary() {
 
 validate_section
 validate_product
+# A partial run compared with a full one would list everything it skipped as gone.
+if [ "$DIFF" = 1 ] && { [ -n "$ONLY" ] || [ -n "$ONLY_PRODUCT" ]; }; then
+  echo "--diff compares full runs; drop --section and --product" >&2
+  exit 2
+fi
 
 host_identity
 host_services
@@ -147,4 +158,17 @@ if [ "$CLUSTER" = 1 ] && declare -F pve_cluster_sweep >/dev/null; then
 fi
 
 print_summary
+# Only full runs are saved, so the previous run is always comparable.
+if [ -z "$ONLY" ] && [ -z "$ONLY_PRODUCT" ]; then
+  if [ "$DIFF" = 1 ]; then
+    printf '\n===== DIFF WITH THE PREVIOUS RUN =====\n'
+    changes="$(python3 "$SCRIPT_DIR/checks/history.py" diff "$RECORD")"
+    if [ -n "$changes" ]; then
+      echo "$changes" | sed 's/^/  /'
+    else
+      echo "  -- no warning appeared or disappeared, no metric moved"
+    fi
+  fi
+  python3 "$SCRIPT_DIR/checks/history.py" save "$RECORD" | sed 's/^/  /'
+fi
 exit 0

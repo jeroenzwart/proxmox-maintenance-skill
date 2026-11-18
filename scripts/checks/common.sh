@@ -7,14 +7,23 @@
 WARN_COUNT=0
 NODE="$(hostname)"
 
+CURRENT_SECTION=""
+# Every finding and metric also goes to the run record, a file rather than a
+# variable so that one raised inside a subshell is kept too. check.sh creates it.
+RECORD="${RECORD:-/dev/null}"
+
 sec() {
   [ -n "$ONLY" ] && [ "$ONLY" != "$1" ] && return 1
+  CURRENT_SECTION="$1"
   printf '\n===== %s =====\n' "$(echo "$1" | tr '[:lower:]' '[:upper:]')"
 
   return 0
 }
-warn() { WARN_COUNT=$((WARN_COUNT + 1)); printf '  !! %s\n' "$*"; }
-note() { printf '  -- %s\n' "$*"; }
+record() { printf '%s\t%s\t%s\n' "$1" "$2" "$3" >> "$RECORD"; }
+warn() { WARN_COUNT=$((WARN_COUNT + 1)); printf '  !! %s\n' "$*"; record WARN "$CURRENT_SECTION" "$*"; }
+note() { printf '  -- %s\n' "$*"; record NOTE "$CURRENT_SECTION" "$*"; }
+# A value worth comparing between runs (check.sh --diff); prints nothing.
+metric() { record METRIC "$1" "$2"; }
 have() { command -v "$1" >/dev/null 2>&1; }
 # Map WARN/NOTE lines from the report helpers onto warn/note. Feed it with
 # `< <(...)`, not a pipe: in a piped subshell the warning count is lost.
@@ -301,6 +310,9 @@ host_zfs() {
   if have zpool; then
     echo "  -- zfs pools --"
     zpool list 2>/dev/null | sed 's/^/  /'
+    while read -r name cap; do
+      metric "zfs.$name.cap" "${cap%\%}"
+    done < <(zpool list -H -o name,cap 2>/dev/null)
     # ZFS does not fill vdevs evenly, so a comfortable pool-level percentage can
     # hide a vdev that is nearly full - which slows writes and lengthens any
     # resilver exactly when that matters most.
@@ -375,6 +387,7 @@ host_disk() {
   echo "  -- filesystem usage --"
   df -h / /var/lib/vz 2>/dev/null | sed 's/^/  /'
   root_use="$(df --output=pcent / 2>/dev/null | tail -1 | tr -dc '0-9')"
+  [ -n "$root_use" ] && metric disk.root.use "$root_use"
   [ -n "$root_use" ] && [ "$root_use" -gt 85 ] && warn "root filesystem is ${root_use}% full"
 }
 
@@ -405,6 +418,10 @@ host_smart() {
       # Vendors append "(Min/Max 21/67)" in wildly varying shapes, so pick the
       # max out explicitly rather than trusting the last field.
       tmax="$(echo "$info" | grep -m1 -oE 'Min/Max +[0-9]+/[0-9]+' | grep -oE '[0-9]+$')"
+      # By serial: /dev names can swap between boots, which would read as movement.
+      serial="$(echo "$info" | awk -F': *' '/Serial Number/{print $2; exit}' | tr -d ' ')"
+      [ -n "$realloc" ] && metric "smart.${serial:-$d}.realloc" "$realloc"
+      [ -n "$pending" ] && metric "smart.${serial:-$d}.pending" "$pending"
       wearsata="$(echo "$info" | awk '/Media_Wearout_Indicator|Wear_Leveling_Count|SSD_Life_Left/{print $2"(val "$4")"; exit}')"
 
       # No health line at all means SMART could not be read (USB bridge, RAID

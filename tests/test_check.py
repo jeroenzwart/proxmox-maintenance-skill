@@ -8,8 +8,13 @@ ROOT = Path(__file__).resolve().parent.parent
 STUBS = ROOT / "tests" / "stubs"
 
 
+CACHE = tempfile.TemporaryDirectory()
+
+
 def run_check(installed, *args, log=""):
     env = dict(os.environ)
+    # Full runs save their record; keep that out of the real cache.
+    env["PROXMOX_SKILL_CACHE"] = CACHE.name
     env["PATH"] = f"{STUBS}:{env['PATH']}"
     env["STUB_INSTALLED"] = installed
     env["STUB_LOG"] = log
@@ -53,6 +58,14 @@ class SectionValidationTest(unittest.TestCase):
 
         self.assertEqual(result.returncode, 2)
         self.assertIn("not installed", result.stderr)
+
+
+class DiffTest(unittest.TestCase):
+    def test_diff_with_section_exits_2(self):
+        result = run_check("pve-manager", "--diff", "--section", "storage")
+
+        self.assertEqual(result.returncode, 2)
+        self.assertIn("full runs", result.stderr)
 
 
 class PdmRemotesTest(unittest.TestCase):
