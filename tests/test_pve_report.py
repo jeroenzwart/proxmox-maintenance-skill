@@ -114,6 +114,40 @@ class HaTest(unittest.TestCase):
         self.assertFalse([line for line in self.lines if "vm:103" in line], self.lines)
 
 
+def notifications(config, users):
+    return (FIXTURES / config).read_text() + "### users\n" + "".join(f"{user} {mail}\n" for user, mail in users.items())
+
+
+class NotificationsTest(unittest.TestCase):
+    def test_only_default_target_without_root_mail_warns(self):
+        code, lines = report("notifications", notifications("notifications-default.cfg", {}))
+
+        self.assertEqual(code, 0)
+        self.assertEqual(len(lines), 1, lines)
+        self.assertTrue(lines[0].startswith("WARN "), lines)
+        self.assertIn("root@pam", lines[0])
+
+    def test_default_target_with_root_mail_is_silent(self):
+        code, lines = report("notifications", notifications("notifications-default.cfg",
+                                                            {"root@pam": "ops@example.org"}))
+
+        self.assertEqual(lines, [])
+
+    def test_extra_target_is_silent(self):
+        code, lines = report("notifications", notifications("notifications-smtp.cfg",
+                                                            {"admin@pam": "admin@example.org"}))
+
+        self.assertEqual(lines, [])
+
+    def test_matcher_without_enabled_target_warns(self):
+        config = "sendmail: mail-to-root\n\tdisable true\n\tmailto-user root@pam\n\n" \
+                 "matcher: default-matcher\n\tmode all\n\ttarget mail-to-root\n"
+        code, lines = report("notifications", config + "### users\nroot@pam ops@example.org\n")
+
+        self.assertEqual(len(lines), 1, lines)
+        self.assertTrue(lines[0].startswith("WARN "), lines)
+
+
 class InvalidInputTest(unittest.TestCase):
     def test_invalid_input_is_note(self):
         code, lines = report("coverage", "not json")

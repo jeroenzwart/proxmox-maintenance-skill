@@ -508,3 +508,34 @@ host_update() {
     have "$checker" && note "$checker is installed: before a major upgrade run '$checker --full' and resolve every FAIL and WARN"
   done
 }
+
+# Users with an e-mail address, as "<userid> <email>" lines. PVE keeps users on
+# one colon-separated line each (email is field 7); PBS uses section blocks.
+user_emails() {
+  case "$1" in
+    pve) awk -F: '$1 == "user" && $7 != "" {print $2, $7}' /etc/pve/user.cfg 2>/dev/null ;;
+    pbs) awk '/^user:/ {user = $2} /^[[:space:]]+email[[:space:]]/ && user != "" {print user, $2}' /etc/proxmox-backup/user.cfg 2>/dev/null ;;
+  esac
+}
+
+# A failed backup that notifies nobody is found only when someone needs the
+# backup. PBS user.cfg handling is built from the docs, not yet seen on a host.
+host_notifications() {
+  local product config
+  sec notifications || return 0
+  for product in $PRODUCTS; do
+    case "$product" in
+      pve) config=/etc/pve/notifications.cfg ;;
+      pbs) config=/etc/proxmox-backup/notifications.cfg ;;
+      *) continue ;;
+    esac
+    echo "  -- $product: $config --"
+    if [ -f "$config" ]; then
+      awk '/^[a-z-]+: / {kind = $1; name = $2} /^[[:space:]]+(target|disable)[[:space:]]/ {print "    " kind " " name ": " $1 " " $2}' "$config"
+    else
+      note "$config does not exist - the built-in default (mail to root@pam) applies"
+    fi
+    report_lines < <({ cat "$config" 2>/dev/null; echo "### users"; user_emails "$product"; } \
+      | python3 "$SCRIPT_DIR/checks/pve_report.py" notifications)
+  done
+}

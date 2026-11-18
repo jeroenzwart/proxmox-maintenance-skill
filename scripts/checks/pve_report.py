@@ -115,11 +115,77 @@ def ha(raw: str, now: float) -> list[str]:
     return findings
 
 
+def parse_sections(text: str) -> list[tuple[str, str, dict[str, list[str]]]]:
+    """`type: name` blocks with indented `key value` lines; keys may repeat."""
+    sections = []
+    for line in text.splitlines():
+        head = re.match(r"^(\S+):\s*(\S+)\s*$", line)
+        if head:
+            sections.append((head.group(1), head.group(2), {}))
+        elif sections and line[:1] in (" ", "\t") and line.strip():
+            key, _, value = line.strip().partition(" ")
+            sections[-1][2].setdefault(key, []).append(value.strip())
+
+    return sections
+
+
+def enabled(options: dict[str, list[str]]) -> bool:
+    return options.get("disable", ["0"])[-1] not in ("1", "true")
+
+
+# What PVE and PBS use when notifications.cfg has no entries of its own.
+DEFAULT_NOTIFICATIONS = """sendmail: mail-to-root
+\tmailto-user root@pam
+
+matcher: default-matcher
+\tmode all
+\ttarget mail-to-root
+"""
+
+
+def notifications(raw: str, now: float) -> list[str]:
+    """notifications.cfg, then `### users` and one `<userid> <email>` per line."""
+    config, marker, users_text = raw.partition("### users\n")
+    if not marker:
+        raise ValueError("expected a '### users' line")
+    emails = {}
+    for line in users_text.splitlines():
+        user, _, email = line.strip().partition(" ")
+        if user and email:
+            emails[user] = email
+    sections = parse_sections(config) or parse_sections(DEFAULT_NOTIFICATIONS)
+
+    targets = {name: (kind, options) for kind, name, options in sections if kind != "matcher"}
+    used = {target for kind, _, options in sections if kind == "matcher" and enabled(options)
+            for target in options.get("target", [])}
+    reachable = [name for name in sorted(used) if name in targets and enabled(targets[name][1])]
+    if not reachable:
+        return ["WARN no enabled notification matcher routes to an enabled target - "
+                "failed backups and jobs notify nobody"]
+
+    def has_recipient(name: str) -> bool:
+        kind, options = targets[name]
+        if kind not in ("sendmail", "smtp"):
+            return True  # gotify, webhook: their endpoint is the recipient
+        if options.get("mailto"):
+            return True
+        return any(user in emails for user in options.get("mailto-user", []))
+
+    if not any(has_recipient(name) for name in reachable):
+        users = sorted({user for name in reachable for user in targets[name][1].get("mailto-user", [])})
+        return [f"WARN notifications only go to mail target(s) {', '.join(reachable)}, whose recipient(s) "
+                f"{', '.join(users) or '(none)'} have no e-mail address - failed backups and jobs notify nobody; "
+                f"set an address on the user or add a target"]
+
+    return []
+
+
 REPORTS = {
     "coverage": coverage,
     "snapshots": snapshots,
     "replication": replication,
     "ha": ha,
+    "notifications": notifications,
 }
 
 

@@ -14,7 +14,7 @@
 #   --section NAME  run only one section (host-level or product)
 #   --products      print the detected products and exit
 #
-# Host-level sections: identity services packages certs network zfs disk smart logs
+# Host-level sections: identity services packages certs network zfs disk smart notifications logs
 # Only on request (--section): update
 # PVE: cluster storage guests backup coverage snapshots replication
 # PBS: datastores gc jobs tasks remotes tape
@@ -24,7 +24,7 @@ set -uo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
-HOST_SECTIONS="identity services packages certs network zfs disk smart logs update"
+HOST_SECTIONS="identity services packages certs network zfs disk smart notifications logs update"
 PVE_SECTIONS="cluster storage guests backup coverage snapshots replication"
 PBS_SECTIONS="datastores gc jobs tasks remotes tape"
 PDM_SECTIONS="remotes subscriptions"
@@ -147,6 +147,7 @@ host_network
 host_zfs
 host_disk
 host_smart
+host_notifications
 for product in $PRODUCTS; do
   run_product "$product"
 done
