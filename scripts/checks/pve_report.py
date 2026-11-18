@@ -85,9 +85,41 @@ def snapshots(raw: str, now: float) -> list[str]:
     return findings
 
 
+def replication(raw: str, now: float) -> list[str]:
+    """Jobs from /nodes/<node>/replication (fields as in pvesr status)."""
+    findings = []
+    for job in json.loads(raw):
+        if job.get("disable"):
+            continue
+        fail_count = int(job.get("fail_count") or 0)
+        if fail_count or job.get("error"):
+            findings.append(f"WARN replication job {job['id']} (guest {job.get('guest', '?')} -> "
+                            f"{job.get('target', '?')}) failed {fail_count} time(s) in a row: "
+                            f"{job.get('error') or 'no error text'}")
+
+    return findings
+
+
+# HA states that need a human; the rest are normal or transitional.
+HA_BAD_STATES = {"error", "fence", "recovery"}
+
+
+def ha(raw: str, now: float) -> list[str]:
+    """Entries from /cluster/ha/status/current."""
+    findings = []
+    for entry in json.loads(raw):
+        if entry.get("type") == "service" and entry.get("state") in HA_BAD_STATES:
+            findings.append(f"WARN HA resource {entry['sid']} is in state '{entry['state']}' on "
+                            f"{entry.get('node', '?')} - see 'ha-manager status' and the HA chapter")
+
+    return findings
+
+
 REPORTS = {
     "coverage": coverage,
     "snapshots": snapshots,
+    "replication": replication,
+    "ha": ha,
 }
 
 

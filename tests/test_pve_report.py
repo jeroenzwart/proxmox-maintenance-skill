@@ -75,6 +75,45 @@ class SnapshotsTest(unittest.TestCase):
         self.assertEqual(len(self.lines), 2, self.lines)
 
 
+class ReplicationTest(unittest.TestCase):
+    def setUp(self):
+        code, self.lines = report("replication", (FIXTURES / "replication.json").read_text())
+        self.assertEqual(code, 0)
+
+    def test_replication_failcount_warns(self):
+        failing = [line for line in self.lines if "101-0" in line]
+
+        self.assertEqual(len(failing), 1, self.lines)
+        self.assertTrue(failing[0].startswith("WARN "), failing)
+        self.assertIn("3", failing[0])
+        self.assertIn("not available", failing[0])
+
+    def test_replication_ok_is_silent(self):
+        self.assertFalse([line for line in self.lines if "102-0" in line], self.lines)
+
+    def test_disabled_replication_is_not_a_warning(self):
+        self.assertFalse([line for line in self.lines if "103-0" in line and line.startswith("WARN")], self.lines)
+
+
+class HaTest(unittest.TestCase):
+    def setUp(self):
+        code, self.lines = report("ha", (FIXTURES / "ha-status.json").read_text())
+        self.assertEqual(code, 0)
+
+    def test_ha_error_state_warns(self):
+        error = [line for line in self.lines if "vm:101" in line]
+
+        self.assertEqual(len(error), 1, self.lines)
+        self.assertTrue(error[0].startswith("WARN "), error)
+        self.assertIn("error", error[0])
+
+    def test_ha_fence_state_warns(self):
+        self.assertTrue([line for line in self.lines if "ct:102" in line and line.startswith("WARN")], self.lines)
+
+    def test_ha_started_is_silent(self):
+        self.assertFalse([line for line in self.lines if "vm:103" in line], self.lines)
+
+
 class InvalidInputTest(unittest.TestCase):
     def test_invalid_input_is_note(self):
         code, lines = report("coverage", "not json")

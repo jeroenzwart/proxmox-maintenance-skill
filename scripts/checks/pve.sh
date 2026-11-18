@@ -106,6 +106,8 @@ pve_guests() {
   if have ha-manager; then
     ha="$(timeout 20 ha-manager status 2>/dev/null)"
     [ -n "$ha" ] && { echo "  -- HA --"; echo "$ha" | sed 's/^/  /'; }
+    report_lines < <(timeout 20 pvesh get /cluster/ha/status/current --output-format json 2>/dev/null \
+      | python3 "$SCRIPT_DIR/checks/pve_report.py" ha)
   fi
 }
 
@@ -235,4 +237,18 @@ pve_snapshots() {
       cat "$f"
     done | python3 "$SCRIPT_DIR/checks/pve_report.py" snapshots)
   note "snapshots older than 30 days and leftover 'vzdump' snapshots are listed above as !!"
+}
+
+pve_replication() {
+  local jobs
+  sec replication || return 0
+  timeout 20 pvesr status 2>&1 | sed 's/^/  /'
+  # The API carries the same job state as 'pvesr status', as JSON.
+  jobs="$(timeout 20 pvesh get "/nodes/$NODE/replication" --output-format json 2>/dev/null)"
+  if [ "$jobs" = "[]" ]; then
+    note "no replication jobs on this node"
+
+    return 0
+  fi
+  report_lines < <(echo "$jobs" | python3 "$SCRIPT_DIR/checks/pve_report.py" replication)
 }

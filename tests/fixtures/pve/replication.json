@@ -1,0 +1,8 @@
+[
+ {"id": "101-0", "guest": 101, "target": "node2", "type": "local", "jobnum": 0, "schedule": "*/15",
+  "last_sync": 1002590000, "last_try": 1002599000, "duration": 2.1, "fail_count": 3, "error": "storage 'tank' is not available on node 'node2'"},
+ {"id": "102-0", "guest": 102, "target": "node2", "type": "local", "jobnum": 0, "schedule": "*/15",
+  "last_sync": 1002599000, "last_try": 1002599000, "duration": 1.4, "fail_count": 0},
+ {"id": "103-0", "guest": 103, "target": "node2", "type": "local", "jobnum": 0, "disable": 1,
+  "last_sync": 0, "fail_count": 5, "error": "old failure"}
+]

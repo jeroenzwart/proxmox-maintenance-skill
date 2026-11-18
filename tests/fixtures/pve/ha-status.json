@@ -1,0 +1,6 @@
+[{"id":"quorum","node":"node1","quorate":1,"status":"OK","type":"quorum"},
+ {"id":"master","node":"node1","status":"node1 (active, Wed Nov 18 23:18:51 2026)","timestamp":1002599000,"type":"master"},
+ {"id":"lrm:node1","node":"node1","status":"node1 (active, Wed Nov 18 23:18:51 2026)","timestamp":1002599000,"type":"lrm"},
+ {"id":"service:vm:101","type":"service","sid":"vm:101","node":"node1","state":"error","request_state":"started","status":"vm:101 (node1, error)"},
+ {"id":"service:ct:102","type":"service","sid":"ct:102","node":"node2","state":"fence","request_state":"started","status":"ct:102 (node2, fence)"},
+ {"id":"service:vm:103","type":"service","sid":"vm:103","node":"node1","state":"started","request_state":"started","status":"vm:103 (node1, started)"}]
